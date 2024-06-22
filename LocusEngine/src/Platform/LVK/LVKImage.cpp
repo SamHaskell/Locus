@@ -1,4 +1,5 @@
 #include "LVKImage.hpp"
+#include <vulkan/vulkan_core.h>
 
 VkImageCreateInfo LVK::ImageCreateInfo(VkFormat Format, VkImageUsageFlags UsageFlags, VkExtent3D Extent)
 {
@@ -69,7 +70,34 @@ void LVK::ImageTransitionLazy(VkCommandBuffer Cmd, const VkImageMemoryBarrier& I
 	);	
 }
 
-void LVK::ImageCopyTransfer(VkCommandBuffer Cmd, VkImage Src, VkImage Dst, VkExtent2D SrcExtent, VkExtent2D DstExtent)
+void LVK::ImageBlit(VkCommandBuffer Cmd, VkImage Src, VkImage Dst, VkExtent2D SrcExtent, VkExtent2D DstExtent)
 {
-
+	LLOG(Vulkan, Locus::Info, "Destination Extent: %d, %d", DstExtent.width, DstExtent.height);
+	VkImageBlit BlitRegion = {
+		.srcSubresource = {
+			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+			.mipLevel = 0,
+			.baseArrayLayer = 0,
+			.layerCount = 1
+		},
+		.srcOffsets = {{0, 0, 0}, {static_cast<i32>(SrcExtent.width), static_cast<i32>(SrcExtent.height), 1}},
+		.dstSubresource = {
+			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+			.mipLevel = 0,
+			.baseArrayLayer = 0,
+			.layerCount = 1
+		},
+		.dstOffsets = {{0, 0, 0}, {static_cast<i32>(DstExtent.width), static_cast<i32>(DstExtent.height), 1}}
+	};
+	
+	vkCmdBlitImage(
+		Cmd,
+		Src,
+		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		Dst,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		1,
+		&BlitRegion,
+		VK_FILTER_LINEAR
+	);
 }

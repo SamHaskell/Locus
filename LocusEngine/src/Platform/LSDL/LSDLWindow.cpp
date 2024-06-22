@@ -45,6 +45,7 @@ namespace Locus
 	{
 		i32 W, H;
 		SDL_GetWindowSizeInPixels(WindowHandle, &W, &H);
+		LLOG(Display, Info, "Window Dimensions: %d, %d", W, H);
 		Width = static_cast<u32>(W);
 		Height = static_cast<u32>(H);
 	}

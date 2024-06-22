@@ -1,11 +1,8 @@
 #include "LVKGraphicsDevice.hpp"
-
-#define VK_USE_PLATFORM_MACOS_MVK
-#define VOLK_IMPLEMENTATION
-#include "volk.h"
+#include "Platform/LVK/LVKImage.hpp"
+#include <vulkan/vulkan_core.h>
 
 #define VMA_IMPLEMENTATION
-#define VK_NO_PROTOTYPES
 #include "vma/vk_mem_alloc.h"
 
 #include "Base/Asserts.hpp"
@@ -34,42 +31,47 @@ namespace Locus
 	
 	LVKGraphicsDevice::LVKGraphicsDevice(const Window* Window)
 	{
-		VK_CHECK_RESULT(volkInitialize());
-		
-		u32 RequiredExtensionCount;
-	 	LCheck(SDL_Vulkan_GetInstanceExtensions((SDL_Window*)Window->GetNativeHandle(), &RequiredExtensionCount, NULL));
-		m_Config.RequiredExtensions.Reserve(RequiredExtensionCount);
-		LCheck(SDL_Vulkan_GetInstanceExtensions((SDL_Window*)Window->GetNativeHandle(), &RequiredExtensionCount, m_Config.RequiredExtensions.Data()));
-		m_Config.RequiredExtensions.Push(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
-		
-		m_Config.ValidationLayers.Push("VK_LAYER_KHRONOS_validation");
-		
-		m_Config.RequiredDeviceFeatures = {
-			// Anything goes for now!
-		};
-		
-		m_Config.RequiredDeviceExtensions.Push("VK_KHR_portability_subset");
-		m_Config.RequiredDeviceExtensions.Push(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
-		
-		m_Config.AllowedDeviceTypes.Push(VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU);
-		m_Config.AllowedDeviceTypes.Push(VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU);
-		
-		CreateDevice(Window);
-		
-		VmaAllocatorCreateInfo AllocatorInfo = {
-			.flags = 0,
-			.physicalDevice = m_PhysicalDevice,
-			.device = m_Device,
-			.instance = m_Instance,
-		};
-		
-		vmaCreateAllocator(&AllocatorInfo, &m_Allocator);
-		m_DeletionQueue.Push([&]() {
-			vmaDestroyAllocator(m_Allocator);
-		});
-		
-		CreateSwapchain(Window);
-		CreateFrameResources();
+          u32 RequiredExtensionCount;
+          LCheck(SDL_Vulkan_GetInstanceExtensions(
+              (SDL_Window *)Window->GetNativeHandle(), &RequiredExtensionCount,
+              NULL));
+          m_Config.RequiredExtensions.Reserve(RequiredExtensionCount);
+          LCheck(SDL_Vulkan_GetInstanceExtensions(
+              (SDL_Window *)Window->GetNativeHandle(), &RequiredExtensionCount,
+              m_Config.RequiredExtensions.Data()));
+          m_Config.RequiredExtensions.Push(
+              VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+
+          m_Config.ValidationLayers.Push("VK_LAYER_KHRONOS_validation");
+
+          m_Config.RequiredDeviceFeatures = {
+              // Anything goes for now!
+          };
+
+          m_Config.RequiredDeviceExtensions.Push("VK_KHR_portability_subset");
+          m_Config.RequiredDeviceExtensions.Push(
+              VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+
+          m_Config.AllowedDeviceTypes.Push(
+              VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU);
+          m_Config.AllowedDeviceTypes.Push(
+              VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU);
+
+          CreateDevice(Window);
+          
+          Window->GetFramebufferSize(m_DrawExtent.width, m_DrawExtent.height);
+
+          VmaAllocatorCreateInfo AllocatorInfo = {
+              .flags = 0,
+              .physicalDevice = m_PhysicalDevice,
+              .device = m_Device,
+              .instance = m_Instance,
+          };
+
+          vmaCreateAllocator(&AllocatorInfo, &m_Allocator);
+          m_DeletionQueue.Push([&]() { vmaDestroyAllocator(m_Allocator); });
+          CreateSwapchain(Window);
+          CreateFrameResources();
 	}
 	
 	LVKGraphicsDevice::~LVKGraphicsDevice() 
@@ -103,50 +105,89 @@ namespace Locus
 		
 		LAssert(ImageIndex < m_Swapchain.Details.ImageCount);
 		
-		VkImageMemoryBarrier RetrieveImageBarrier = LVK::ImageMemoryBarrier(
-			m_Swapchain.Images[ImageIndex], 
-			VK_IMAGE_LAYOUT_UNDEFINED, 
-			VK_IMAGE_LAYOUT_GENERAL,
-			m_QueueFamilyIndices.GraphicsFamilyIndex,
-			m_QueueFamilyIndices.GraphicsFamilyIndex
-		);
+		{
+			VkImageMemoryBarrier Barrier = LVK::ImageMemoryBarrier(
+				m_DrawImage.Image, 
+				VK_IMAGE_LAYOUT_UNDEFINED, 
+				VK_IMAGE_LAYOUT_GENERAL,
+				m_QueueFamilyIndices.GraphicsFamilyIndex,
+				m_QueueFamilyIndices.GraphicsFamilyIndex
+			);
+			
+			LVK::ImageTransitionLazy(
+				Frame.GraphicsCommandBuffer, 
+				Barrier
+			);
+		}
 		
-		LVK::ImageTransitionLazy(
-			Frame.GraphicsCommandBuffer, 
-			RetrieveImageBarrier
-		);
+		// Draw!
 		
-		VkClearColorValue ClearColor = {{ 0.0f, 0.0f, Locus::Math::Sin((f32)m_FrameNumber / 120.0f), 1.0f}};
+		{
+			VkClearColorValue ClearColor = {{ 0.0f, 0.0f, Locus::Math::Sin((f32)m_FrameNumber / 120.0f), 1.0f}};
+			
+			VkImageSubresourceRange ClearRange = {
+				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.baseMipLevel = 0,
+				.levelCount = VK_REMAINING_MIP_LEVELS,
+				.baseArrayLayer = 0,
+				.layerCount = VK_REMAINING_ARRAY_LAYERS
+			};
+			
+			vkCmdClearColorImage(
+				Frame.GraphicsCommandBuffer, 
+				m_DrawImage.Image, 
+				VK_IMAGE_LAYOUT_GENERAL, 
+				&ClearColor, 
+				1, 
+				&ClearRange
+			);
+		}
 		
-		VkImageSubresourceRange ClearRange = {
-			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-			.baseMipLevel = 0,
-			.levelCount = VK_REMAINING_MIP_LEVELS,
-			.baseArrayLayer = 0,
-			.layerCount = VK_REMAINING_ARRAY_LAYERS
-		};
-		
-		vkCmdClearColorImage(
-			Frame.GraphicsCommandBuffer, 
-			m_Swapchain.Images[ImageIndex], 
-			VK_IMAGE_LAYOUT_GENERAL, 
-			&ClearColor, 
-			1, 
-			&ClearRange
-		);
+		// End Draw!
 
-		VkImageMemoryBarrier PresentImageBarrier = LVK::ImageMemoryBarrier(
+		{
+			VkImageMemoryBarrier Barrier = LVK::ImageMemoryBarrier(
+				m_DrawImage.Image, 
+				VK_IMAGE_LAYOUT_GENERAL, 
+				VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+				m_QueueFamilyIndices.GraphicsFamilyIndex,
+				m_QueueFamilyIndices.GraphicsFamilyIndex
+			);
+			
+			LVK::ImageTransitionLazy(Frame.GraphicsCommandBuffer, Barrier);
+		}
+		
+		{
+			VkImageMemoryBarrier Barrier = LVK::ImageMemoryBarrier(
+				m_Swapchain.Images[ImageIndex], 
+				VK_IMAGE_LAYOUT_UNDEFINED, 
+				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				m_QueueFamilyIndices.GraphicsFamilyIndex,
+				m_QueueFamilyIndices.GraphicsFamilyIndex
+			);
+			
+			LVK::ImageTransitionLazy(Frame.GraphicsCommandBuffer, Barrier);
+		}
+			
+		LVK::ImageBlit(
+			Frame.GraphicsCommandBuffer, 
+			m_DrawImage.Image, 
 			m_Swapchain.Images[ImageIndex], 
-			VK_IMAGE_LAYOUT_GENERAL, 
-			VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-			m_QueueFamilyIndices.GraphicsFamilyIndex,
-			m_QueueFamilyIndices.GraphicsFamilyIndex
+			m_DrawExtent, 
+			m_Swapchain.Details.Extent
 		);
 		
-		LVK::ImageTransitionLazy(
-			Frame.GraphicsCommandBuffer, 
-			PresentImageBarrier
-		);
+		{
+			VkImageMemoryBarrier Barrier = LVK::ImageMemoryBarrier(
+				m_Swapchain.Images[ImageIndex], 
+				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, 
+				m_QueueFamilyIndices.GraphicsFamilyIndex,
+				m_QueueFamilyIndices.GraphicsFamilyIndex
+			);
+			
+			LVK::ImageTransitionLazy(Frame.GraphicsCommandBuffer, Barrier);
+		}
 		
 		VK_CHECK_RESULT(vkEndCommandBuffer(Frame.GraphicsCommandBuffer));
 		
@@ -233,7 +274,6 @@ namespace Locus
 	void LVKGraphicsDevice::CreateSwapchain(const Window* Window)
 	{
 		// Query for swapchain details
-		
 		LVKSwapchainSupportDetails SwapchainSupportDetails = LVK::QuerySwapchainSupport(m_Surface, m_PhysicalDevice);
 		
 		VkSurfaceFormatKHR SurfaceFormat = LVK::ChooseSwapchainSurfaceFormat(SwapchainSupportDetails.Formats);

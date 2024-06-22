@@ -1,8 +1,8 @@
 #!/bin/bash
 
 echo "Building the project..."
-mkdir Build
-cd Build || exit
+mkdir build
+cd build || exit
 cmake ..
 make
 echo "Project built."

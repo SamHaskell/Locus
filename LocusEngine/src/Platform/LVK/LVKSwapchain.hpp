@@ -15,9 +15,7 @@ namespace Locus
 	{
 		LVKSwapchainDetails Details = {};		
 		VkSwapchainKHR Swapchain = VK_NULL_HANDLE;
-		VkFormat ImageFormat;
 		TArray<VkImage> Images = {};
 		TArray<VkImageView> ImageViews = {};
-		VkExtent2D Extent;
 	};
 }
