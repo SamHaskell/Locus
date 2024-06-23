@@ -12,7 +12,7 @@ namespace Locus
 		u32 Height = 0;
 	};
 	
-	class Window 
+	class Window : public Object
 	{
 	public:
 		static Window* Create(const WindowConfig& Config);

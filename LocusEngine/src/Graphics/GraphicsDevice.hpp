@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Base/Defines.hpp"
+#include "Base/Base.hpp"
 
 namespace Locus
 {
@@ -9,7 +9,7 @@ namespace Locus
 	class Window;
 	class Swapchain;
 	
-	class GraphicsDevice
+	class GraphicsDevice : public Object
 	{
 	public:
 		static GraphicsDevice* Create(const Window* Window);

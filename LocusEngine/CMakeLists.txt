@@ -54,6 +54,7 @@ set(BASE_SOURCE_FILES
 )
 
 set(CORE_SOURCE_FILES
+	${CMAKE_CURRENT_SOURCE_DIR}/src/Core/Engine.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/src/Core/Window.cpp
 )
 
@@ -74,6 +75,7 @@ set(PLATFORM_SOURCE_FILES
 	${CMAKE_CURRENT_SOURCE_DIR}/src/Platform/LVK/LVKDescriptor.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/src/Platform/LVK/LVKGraphicsDevice.cpp
 	
+	${CMAKE_CURRENT_SOURCE_DIR}/src/Platform/LSDL/LSDLDisplayManager.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/src/Platform/LSDL/LSDLWindow.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/src/Platform/LSDL/LSDLPlatform.cpp
 )

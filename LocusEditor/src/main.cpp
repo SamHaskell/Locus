@@ -1,5 +1,6 @@
 #include "Locus.hpp"
 
+#include "Platform/Platform.hpp"
 #include "SDL.h"
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_vulkan.h"
@@ -7,7 +8,8 @@
 using namespace Locus;
 
 i32 main(i32 argc, char* argv[])
-{
+{	
+	Engine::Get().Init();
 	Platform::Init();
 	
 	Window* Window = Window::Create(WindowConfig{"Locus", 1280, 720});
@@ -50,6 +52,9 @@ i32 main(i32 argc, char* argv[])
 	
 	delete GraphicsDevice;
 	delete Window;
+	
+	Platform::Shutdown();
+	Engine::Get().Shutdown();
 	
 	return 0;
 }

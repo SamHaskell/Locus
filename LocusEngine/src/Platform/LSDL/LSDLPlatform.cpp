@@ -17,7 +17,7 @@ namespace Locus
 		
 		void PlatformShutdown()
 		{
-			LAssert(!sInitialized);
+			LAssert(sInitialized);
 			SDL_Quit();
 			sInitialized = false;
 		}

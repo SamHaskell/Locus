@@ -1,5 +1,6 @@
 #include "LVKGraphicsDevice.hpp"
 
+#include "Base/Handles.hpp"
 #include "Platform/LVK/LVKTypes.hpp"
 #include "Platform/Platform.hpp"
 
