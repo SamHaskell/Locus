@@ -16,10 +16,18 @@ static_assert((GenerationBits + IndexBits) == (sizeof(HandleType) * 8));
 constexpr HandleType HandleMask { HandleType{static_cast<HandleType>(-1)} };
 constexpr HandleType IndexMask { (HandleType{1} << IndexBits) - 1 };
 constexpr HandleType GenerationMask { ~IndexMask };
+
+constexpr HandleType HANDLE_INVALID { HandleMask };
 static_assert((GenerationMask^IndexMask) == HandleMask);
 	
 namespace Handles
 {
+	inline HandleType Create(HandleType Index)
+	{
+		LAssert(Index < (1 << IndexBits));
+		return Index;
+	}
+	
 	inline bool IsValid(HandleType Handle)
 	{
 		return Handle != HandleMask;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Base/Base.hpp"
+#include "Core/DisplayManager.hpp"
 
 namespace Locus
 {
@@ -12,7 +13,7 @@ namespace Locus
 	class GraphicsDevice : public Object
 	{
 	public:
-		static GraphicsDevice* Create(const Window* Window);
+		static GraphicsDevice* Create(const WindowHandle Window);
 		virtual ~GraphicsDevice() = default;
 		
 		virtual void TestDraw() = 0;

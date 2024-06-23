@@ -9,11 +9,11 @@ namespace Locus
 	
 	void Engine::Init()
 	{
-		
+		m_DisplayManager = new LSDLDisplayManager();
 	}
 	
 	void Engine::Shutdown()
 	{
-
+		delete m_DisplayManager;
 	}
 }

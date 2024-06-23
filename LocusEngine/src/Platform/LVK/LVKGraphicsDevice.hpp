@@ -1,11 +1,12 @@
 #pragma once
 
+#include "Core/DisplayManager.hpp"
 #include "Graphics/GraphicsDevice.hpp"
 
 #include "LVKImage.hpp"
 #include "LVKSwapchain.hpp"
 #include "LVKTypes.hpp"
-#include "Platform/LVK/LVKDescriptor.hpp"
+#include "LVKDescriptor.hpp"
 
 #include <deque>
 #include <functional>
@@ -41,7 +42,7 @@ namespace Locus
 	class LVKGraphicsDevice : public GraphicsDevice 
 	{
 	public:
-		LVKGraphicsDevice(const Window* Window);
+		LVKGraphicsDevice(const WindowHandle Window);
 		~LVKGraphicsDevice() override;
 		
 		virtual void TestDraw() override;
@@ -54,9 +55,9 @@ namespace Locus
 		LVKFrameResources& GetCurrentFrame() { return m_FrameResources[m_FrameNumber % FRAMES_IN_FLIGHT]; }
 	
 	private:
-		void SetupDevice(const Window* Window);
+		void SetupDevice(const WindowHandle Window);
 		void SetupAllocator();
-		void SetupSwapchain(const Window* Window);
+		void SetupSwapchain(const WindowHandle Window);
 		void SetupFrameResources();
 		void SetupDescriptors();
 		void SetupPipelines();
@@ -64,7 +65,7 @@ namespace Locus
 		
 		void SetupTrianglePipeline();
 		
-		void SetupImGui(const Window* Window);
+		void SetupImGui(const WindowHandle Window);
 		
 		LVKConfig m_Config;
 	

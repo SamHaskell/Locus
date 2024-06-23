@@ -15,7 +15,7 @@ namespace Locus
 			m_Instance = static_cast<T*>(this);
 		}
 		
-		~Singleton()
+		virtual ~Singleton()
 		{
 			LAssertMsg(m_Instance != nullptr, "Calling destructor on singleton when there is no instance.");
 			m_Instance = nullptr;

@@ -1,6 +1,7 @@
 #include "LVKGraphicsDevice.hpp"
 
 #include "Base/Handles.hpp"
+#include "Core/DisplayManager.hpp"
 #include "Platform/LVK/LVKTypes.hpp"
 #include "Platform/Platform.hpp"
 
@@ -16,7 +17,6 @@
 #include "vma/vk_mem_alloc.h"
 
 #include "Base/Asserts.hpp"
-#include "Core/Window.hpp"
 #include "Math/Numerics.hpp"
 
 #include "imgui.h"
@@ -40,12 +40,15 @@ namespace Locus
 		m_Queue.clear();
 	}
 	
-	LVKGraphicsDevice::LVKGraphicsDevice(const Window* Window)
+	LVKGraphicsDevice::LVKGraphicsDevice(const WindowHandle Window)
 	{
+		SDL_Window* WindowHandle = (SDL_Window*)DisplayManager::Get().GetNativeWindowHandle(Window);
+		LAssert(WindowHandle != nullptr);
+		
         u32 RequiredExtensionCount;
-        LCheck(SDL_Vulkan_GetInstanceExtensions((SDL_Window *)Window->GetNativeHandle(), &RequiredExtensionCount, NULL));
+        LCheck(SDL_Vulkan_GetInstanceExtensions(WindowHandle, &RequiredExtensionCount, NULL));
         m_Config.RequiredExtensions.Reserve(RequiredExtensionCount);
-        LCheck(SDL_Vulkan_GetInstanceExtensions((SDL_Window *)Window->GetNativeHandle(), &RequiredExtensionCount, m_Config.RequiredExtensions.Data()));
+        LCheck(SDL_Vulkan_GetInstanceExtensions(WindowHandle, &RequiredExtensionCount, m_Config.RequiredExtensions.Data()));
         m_Config.RequiredExtensions.Push(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
         
         m_Config.ValidationLayers.Push("VK_LAYER_KHRONOS_validation");
@@ -221,8 +224,11 @@ namespace Locus
 		vkCmdEndRendering(Cmd);
 	}
 	
-	void LVKGraphicsDevice::SetupDevice(const Window* Window)
+	void LVKGraphicsDevice::SetupDevice(const WindowHandle Window)
 	{
+		SDL_Window* WindowHandle = (SDL_Window*)DisplayManager::Get().GetNativeWindowHandle(Window);
+		LAssert(WindowHandle != nullptr);
+		
 		LVK::CreateInstance(m_Instance, m_Config.RequiredExtensions, m_Config.ValidationLayers);
 		VK_CHECK_HANDLE(m_Instance);
 
@@ -238,7 +244,7 @@ namespace Locus
 		vkGetDeviceQueue(m_Device, m_QueueFamilyIndices.GraphicsFamilyIndex, 0, &m_GraphicsQueue);
 		vkGetDeviceQueue(m_Device, m_QueueFamilyIndices.PresentFamilyIndex, 0, &m_PresentQueue);
 		
-        Window->GetFramebufferSize(m_DrawExtent.width, m_DrawExtent.height);
+        DisplayManager::Get().GetWindowFramebufferSize(Window, m_DrawExtent.width, m_DrawExtent.height);
 		
 		m_DeletionQueue.Push([&](){
 			LVK::DestroyDevice(m_Device);
@@ -259,7 +265,7 @@ namespace Locus
         m_DeletionQueue.Push([&]() { vmaDestroyAllocator(m_Allocator); });
 	}
 		
-	void LVKGraphicsDevice::SetupSwapchain(const Window* Window)
+	void LVKGraphicsDevice::SetupSwapchain(const WindowHandle Window)
 	{
 		// Query for swapchain details
 		LVKSwapchainSupportDetails SwapchainSupportDetails = LVK::QuerySwapchainSupport(m_Surface, m_PhysicalDevice);
@@ -344,7 +350,7 @@ namespace Locus
 		// Create the intermediary image we will render to.
 		
 		VkExtent3D DrawImageExtent = { 0, 0, 1 };
-		Window->GetFramebufferSize(DrawImageExtent.width, DrawImageExtent.height);
+		DisplayManager::Get().GetWindowFramebufferSize(Window, DrawImageExtent.width, DrawImageExtent.height);
 		
 		m_DrawImage.Format = VK_FORMAT_R16G16B16A16_UNORM;
 		m_DrawImage.Extent = DrawImageExtent;
@@ -673,7 +679,7 @@ namespace Locus
 		});
 	}
 	
-	void LVKGraphicsDevice::SetupImGui(const Window* Window)
+	void LVKGraphicsDevice::SetupImGui(const WindowHandle Window)
 	{
 		// Create ImGUI resources
 		
@@ -703,7 +709,7 @@ namespace Locus
 		// Init ImGui
 		
 		ImGui::CreateContext();
-		ImGui_ImplSDL2_InitForVulkan((SDL_Window*)Window->GetNativeHandle());
+		ImGui_ImplSDL2_InitForVulkan((SDL_Window*)DisplayManager::Get().GetNativeWindowHandle(Window));
 		
 		ImGui_ImplVulkan_InitInfo InitInfo = {
 			.Instance = m_Instance,

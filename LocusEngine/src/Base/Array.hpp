@@ -65,6 +65,13 @@ namespace Locus
 				m_Data[m_Count - 1] = value;
 			}
 			
+			T Pop()
+			{
+				LAssert(!Empty());
+				m_Count --;
+				return m_Data[m_Count];
+			}
+			
 			void Clear()
 			{
 				m_Count = 0;

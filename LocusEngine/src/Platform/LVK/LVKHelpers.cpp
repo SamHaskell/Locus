@@ -1,6 +1,7 @@
 #include "LVKHelpers.hpp"
 
 #include "Base/Base.hpp"
+#include "Core/DisplayManager.hpp"
 #include "Math/Numerics.hpp"
 #include <set>
 #include <vulkan/vulkan_core.h>
@@ -315,10 +316,10 @@ void Locus::LVK::DestroyDevice(VkDevice& Device, const VkAllocationCallbacks *Al
 	vkDestroyDevice(Device, Allocator);
 }
 
-bool Locus::LVK::CreateSurface(const Window *Window, VkInstance Instance, VkSurfaceKHR &OutSurface, const VkAllocationCallbacks *Allocator)
+bool Locus::LVK::CreateSurface(const WindowHandle Window, VkInstance Instance, VkSurfaceKHR &OutSurface, const VkAllocationCallbacks *Allocator)
 {
 	VK_CHECK_HANDLE(Instance);
-	return Window->CreateVulkanSurface(Instance, OutSurface);
+	return DisplayManager::Get().CreateVulkanSurface(Window, Instance, OutSurface);
 }
 
 void Locus::LVK::DestroySurface(VkInstance Instance, VkSurfaceKHR& Surface, const VkAllocationCallbacks *Allocator)
@@ -354,7 +355,7 @@ VkPresentModeKHR Locus::LVK::ChooseSwapchainPresentMode(const TArray<VkPresentMo
 	return VK_PRESENT_MODE_FIFO_KHR;
 }
 
-VkExtent2D Locus::LVK::ChooseSwapchainExtent(const Window* Window, const VkSurfaceCapabilitiesKHR& Capabilities)
+VkExtent2D Locus::LVK::ChooseSwapchainExtent(const WindowHandle Window, const VkSurfaceCapabilitiesKHR& Capabilities)
 {
 	if (Capabilities.currentExtent.width != UINT32_MAX)
 	{
@@ -363,7 +364,7 @@ VkExtent2D Locus::LVK::ChooseSwapchainExtent(const Window* Window, const VkSurfa
 	else 
 	{
 		u32 Width, Height;
-		Window->GetFramebufferSize(Width, Height);
+		DisplayManager::Get().GetWindowFramebufferSize(Window, Width, Height);
 		
 		VkExtent2D Actual = {
 			.width = Width,

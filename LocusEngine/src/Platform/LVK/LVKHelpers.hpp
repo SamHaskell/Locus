@@ -1,8 +1,7 @@
 #pragma once
 
 #include "LVKTypes.hpp"
-
-#include "Core/Window.hpp"
+#include "Core/DisplayManager.hpp"
 
 using namespace Locus;
 
@@ -25,12 +24,12 @@ namespace Locus::LVK
 	bool CreateLogicalDevice(VkPhysicalDevice PhysicalDevice, VkSurfaceKHR Surface, VkDevice& OutDevice, LVKQueueFamilyIndices& QueueFamilyIndices, VkPhysicalDeviceFeatures& RequiredFeatures, const TArray<const char*>& RequiredDeviceExtensions, const TArray<const char*>& ValidationLayers, const VkAllocationCallbacks *Allocator = nullptr);
 	void DestroyDevice(VkDevice& Device, const VkAllocationCallbacks *Allocator = nullptr);
 	
-	bool CreateSurface(const Window* Window, VkInstance Instance, VkSurfaceKHR& OutSurface, const VkAllocationCallbacks* Allocator = nullptr);
+	bool CreateSurface(const WindowHandle Window, VkInstance Instance, VkSurfaceKHR& OutSurface, const VkAllocationCallbacks* Allocator = nullptr);
 	void DestroySurface(VkInstance sInstance, VkSurfaceKHR& sSurface, const VkAllocationCallbacks *Allocator = nullptr);
 	
 	VkSurfaceFormatKHR ChooseSwapchainSurfaceFormat(const TArray<VkSurfaceFormatKHR>& AvailableFormats);
 	VkPresentModeKHR ChooseSwapchainPresentMode(const TArray<VkPresentModeKHR>& AvailablePresentModes);
-	VkExtent2D ChooseSwapchainExtent(const Window* Window, const VkSurfaceCapabilitiesKHR& Capabilities);
+	VkExtent2D ChooseSwapchainExtent(const WindowHandle Window, const VkSurfaceCapabilitiesKHR& Capabilities);
 	
 	VkRenderingAttachmentInfo RenderingAttachmentInfo(VkImageView View, VkClearValue* Clear, VkImageLayout Layout);
 }
