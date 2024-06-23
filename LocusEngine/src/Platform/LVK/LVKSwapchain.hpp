@@ -1,6 +1,7 @@
 #pragma once
 
 #include "LVKCommon.hpp"
+#include <vulkan/vulkan_core.h>
 
 namespace Locus
 {
@@ -15,7 +16,9 @@ namespace Locus
 	{
 		LVKSwapchainDetails Details = {};		
 		VkSwapchainKHR Swapchain = VK_NULL_HANDLE;
+		VkRenderPass RenderPass;
 		TArray<VkImage> Images = {};
 		TArray<VkImageView> ImageViews = {};
+		TArray<VkFramebuffer> Framebuffers = {};
 	};
 }

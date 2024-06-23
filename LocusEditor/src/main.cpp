@@ -1,6 +1,8 @@
 #include "Locus.hpp"
 
 #include "SDL.h"
+#include "imgui_impl_sdl2.h"
+#include "imgui_impl_vulkan.h"
 
 using namespace Locus;
 
@@ -15,22 +17,22 @@ i32 main(i32 argc, char* argv[])
 	bool bShouldRender = true;
 	while (!bShouldQuit)
 	{
-		SDL_Event event;
-		while(SDL_PollEvent(&event) != 0)
+		SDL_Event Event;
+		while(SDL_PollEvent(&Event) != 0)
 		{
-			if (event.type == SDL_QUIT)
+			if (Event.type == SDL_QUIT)
 			{
 				bShouldQuit = true;
 			}
 			
-			if (event.type == SDL_WINDOWEVENT)
+			if (Event.type == SDL_WINDOWEVENT)
 			{
-				if (event.window.event == SDL_WINDOWEVENT_MINIMIZED)
+				if (Event.window.event == SDL_WINDOWEVENT_MINIMIZED)
 				{
 					bShouldRender = false;
 				}
 				
-				if (event.window.event == SDL_WINDOWEVENT_RESTORED)
+				if (Event.window.event == SDL_WINDOWEVENT_RESTORED)
 				{
 					bShouldRender = true;
 				}
@@ -40,6 +42,7 @@ i32 main(i32 argc, char* argv[])
 		if (!bShouldRender)
 		{
 			Platform::SleepThisThread(100);
+			continue;
 		}
 		
 		GraphicsDevice->TestDraw();

@@ -1,7 +1,7 @@
 #include "LVKImage.hpp"
 #include <vulkan/vulkan_core.h>
 
-VkImageCreateInfo LVK::ImageCreateInfo(VkFormat Format, VkImageUsageFlags UsageFlags, VkExtent3D Extent)
+VkImageCreateInfo Locus::LVK::ImageCreateInfo(VkFormat Format, VkImageUsageFlags UsageFlags, VkExtent3D Extent)
 {
 	return {
 		.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -17,7 +17,7 @@ VkImageCreateInfo LVK::ImageCreateInfo(VkFormat Format, VkImageUsageFlags UsageF
 	};
 }
 
-VkImageViewCreateInfo LVK::ImageViewCreateInfo(VkFormat Format, VkImage Image, VkImageAspectFlags AspectFlags)
+VkImageViewCreateInfo Locus::LVK::ImageViewCreateInfo(VkFormat Format, VkImage Image, VkImageAspectFlags AspectFlags)
 {
 	return {
 		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -35,7 +35,7 @@ VkImageViewCreateInfo LVK::ImageViewCreateInfo(VkFormat Format, VkImage Image, V
 	};
 }
 
-VkImageMemoryBarrier LVK::ImageMemoryBarrier(VkImage Image, VkImageLayout Initial, VkImageLayout Final, u32 InitialQueue, u32 FinalQueue)
+VkImageMemoryBarrier Locus::LVK::ImageMemoryBarrier(VkImage Image, VkImageLayout Initial, VkImageLayout Final, u32 InitialQueue, u32 FinalQueue)
 {
 	VkImageAspectFlags AspectMask = (Final == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
 	return {
@@ -58,7 +58,7 @@ VkImageMemoryBarrier LVK::ImageMemoryBarrier(VkImage Image, VkImageLayout Initia
 	};
 }
 
-void LVK::ImageTransitionLazy(VkCommandBuffer Cmd, const VkImageMemoryBarrier& ImageBarrier)
+void Locus::LVK::ImageTransitionLazy(VkCommandBuffer Cmd, const VkImageMemoryBarrier& ImageBarrier)
 {
 	vkCmdPipelineBarrier(
 		Cmd, 
@@ -70,9 +70,8 @@ void LVK::ImageTransitionLazy(VkCommandBuffer Cmd, const VkImageMemoryBarrier& I
 	);	
 }
 
-void LVK::ImageBlit(VkCommandBuffer Cmd, VkImage Src, VkImage Dst, VkExtent2D SrcExtent, VkExtent2D DstExtent)
+void Locus::LVK::ImageBlit(VkCommandBuffer Cmd, VkImage Src, VkImage Dst, VkExtent2D SrcExtent, VkExtent2D DstExtent)
 {
-	LLOG(Vulkan, Locus::Info, "Destination Extent: %d, %d", DstExtent.width, DstExtent.height);
 	VkImageBlit BlitRegion = {
 		.srcSubresource = {
 			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,

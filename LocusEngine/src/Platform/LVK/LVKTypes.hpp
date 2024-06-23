@@ -7,8 +7,6 @@ namespace Locus
 	struct LVKConfig
 	{
 		LVKConfig() = default;
-		LVKConfig(const LVKConfig&) = delete;
-		LVKConfig& operator=(LVKConfig const&);
 		
 		TArray<const char*> RequiredExtensions;
 		TArray<const char*> RequiredDeviceExtensions;

@@ -3,10 +3,11 @@
 #include "Base/Base.hpp"
 #include "Math/Numerics.hpp"
 #include <set>
+#include <vulkan/vulkan_core.h>
 
 using namespace Locus;
 
-bool LVK::CreateInstance(VkInstance& OutInstance, const TArray<const char*>& RequiredExtensions, const TArray<const char*>& ValidationLayers, const VkAllocationCallbacks *Allocator)
+bool Locus::LVK::CreateInstance(VkInstance& OutInstance, const TArray<const char*>& RequiredExtensions, const TArray<const char*>& ValidationLayers, const VkAllocationCallbacks *Allocator)
 {
 	VkApplicationInfo AppInfo = {};
 	AppInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -30,15 +31,16 @@ bool LVK::CreateInstance(VkInstance& OutInstance, const TArray<const char*>& Req
 #endif
 
 	VkResult Result = vkCreateInstance(&InstanceCreateInfo, Allocator, &OutInstance);
+	VK_CHECK_RESULT(Result);
 	return (Result == VK_SUCCESS);
 }
 
-void LVK::DestroyInstance(VkInstance& Instance)
+void Locus::LVK::DestroyInstance(VkInstance& Instance)
 {
 	vkDestroyInstance(Instance, nullptr);
 }
 
-TArray<VkExtensionProperties> LVK::GetInstanceExtensionProperties()
+TArray<VkExtensionProperties> Locus::LVK::GetInstanceExtensionProperties()
 {
 	u32 ExtensionCount = 0;
 	vkEnumerateInstanceExtensionProperties(nullptr, &ExtensionCount, nullptr);
@@ -47,7 +49,7 @@ TArray<VkExtensionProperties> LVK::GetInstanceExtensionProperties()
 	return ExtensionProperties;
 }
 
-TArray<VkLayerProperties> LVK::GetInstanceLayerProperties()
+TArray<VkLayerProperties> Locus::LVK::GetInstanceLayerProperties()
 {
 	u32 LayerCount = 0;
 	vkEnumerateInstanceLayerProperties(&LayerCount, nullptr);
@@ -56,7 +58,7 @@ TArray<VkLayerProperties> LVK::GetInstanceLayerProperties()
 	return LayerProperties;
 }
 
-bool LVK::ChoosePhysicalDevice(VkInstance Instance, VkSurfaceKHR Surface, VkPhysicalDevice& OutPhysicalDevice, VkPhysicalDeviceFeatures& RequiredDeviceFeatures, const TArray<VkPhysicalDeviceType>& AllowedDeviceTypes, const TArray<const char*>& RequiredDeviceExtensions)
+bool Locus::LVK::ChoosePhysicalDevice(VkInstance Instance, VkSurfaceKHR Surface, VkPhysicalDevice& OutPhysicalDevice, VkPhysicalDeviceFeatures& RequiredDeviceFeatures, const TArray<VkPhysicalDeviceType>& AllowedDeviceTypes, const TArray<const char*>& RequiredDeviceExtensions)
 {
 	VK_CHECK_HANDLE(Instance);
 	VK_CHECK_HANDLE(Surface);
@@ -86,7 +88,7 @@ bool LVK::ChoosePhysicalDevice(VkInstance Instance, VkSurfaceKHR Surface, VkPhys
 	return false;
 }
 
-bool LVK::CheckPhysicalDeviceFeatures(VkPhysicalDeviceFeatures& RequiredFeatures, VkPhysicalDeviceFeatures& PhysicalDeviceFeatures)
+bool Locus::LVK::CheckPhysicalDeviceFeatures(VkPhysicalDeviceFeatures& RequiredFeatures, VkPhysicalDeviceFeatures& PhysicalDeviceFeatures)
 {
 	if (RequiredFeatures.robustBufferAccess && !PhysicalDeviceFeatures.robustBufferAccess) return false;
 	if (RequiredFeatures.fullDrawIndexUint32 && !PhysicalDeviceFeatures.fullDrawIndexUint32) return false;
@@ -146,7 +148,7 @@ bool LVK::CheckPhysicalDeviceFeatures(VkPhysicalDeviceFeatures& RequiredFeatures
 	return true;
 }
 
-bool LVK::CheckPhysicalDeviceSuitability(VkPhysicalDevice PhysicalDevice, VkSurfaceKHR Surface, VkPhysicalDeviceFeatures& RequiredFeatures, const TArray<VkPhysicalDeviceType>& AllowedDeviceTypes, const TArray<const char*>& RequiredDeviceExtensions)
+bool Locus::LVK::CheckPhysicalDeviceSuitability(VkPhysicalDevice PhysicalDevice, VkSurfaceKHR Surface, VkPhysicalDeviceFeatures& RequiredFeatures, const TArray<VkPhysicalDeviceType>& AllowedDeviceTypes, const TArray<const char*>& RequiredDeviceExtensions)
 {
 	VkPhysicalDeviceFeatures PhysicalDeviceFeatures;
 	VkPhysicalDeviceProperties PhysicalDeviceProperties;
@@ -212,7 +214,7 @@ bool LVK::CheckPhysicalDeviceSuitability(VkPhysicalDevice PhysicalDevice, VkSurf
 	return bFeatureComplete && bDeviceTypePermitted && bQueueTypesPresent && bExtensionsAvailable && bSwapchainAdequate;
 }
 
-LVKQueueFamilyIndices LVK::FindPhysicalDeviceQueueFamilies(VkPhysicalDevice PhysicalDevice, VkSurfaceKHR Surface)
+LVKQueueFamilyIndices Locus::LVK::FindPhysicalDeviceQueueFamilies(VkPhysicalDevice PhysicalDevice, VkSurfaceKHR Surface)
 {
 	LVKQueueFamilyIndices QueueFamilyIndices;
 	
@@ -241,7 +243,7 @@ LVKQueueFamilyIndices LVK::FindPhysicalDeviceQueueFamilies(VkPhysicalDevice Phys
 	return QueueFamilyIndices;
 }
 
-LVKSwapchainSupportDetails LVK::QuerySwapchainSupport(VkSurfaceKHR Surface, VkPhysicalDevice PhysicalDevice)
+LVKSwapchainSupportDetails Locus::LVK::QuerySwapchainSupport(VkSurfaceKHR Surface, VkPhysicalDevice PhysicalDevice)
 {
 	LVKSwapchainSupportDetails SwapchainSupportDetails;
 
@@ -266,7 +268,7 @@ LVKSwapchainSupportDetails LVK::QuerySwapchainSupport(VkSurfaceKHR Surface, VkPh
 	return SwapchainSupportDetails;
 }
 
-bool LVK::CreateLogicalDevice(VkPhysicalDevice PhysicalDevice, VkSurfaceKHR Surface, VkDevice& OutDevice, LVKQueueFamilyIndices& QueueFamilyIndices, VkPhysicalDeviceFeatures& RequiredFeatures, const TArray<const char*>& RequiredDeviceExtensions, const TArray<const char*>& ValidationLayers, const VkAllocationCallbacks *Allocator)
+bool Locus::LVK::CreateLogicalDevice(VkPhysicalDevice PhysicalDevice, VkSurfaceKHR Surface, VkDevice& OutDevice, LVKQueueFamilyIndices& QueueFamilyIndices, VkPhysicalDeviceFeatures& RequiredFeatures, const TArray<const char*>& RequiredDeviceExtensions, const TArray<const char*>& ValidationLayers, const VkAllocationCallbacks *Allocator)
 {
 	VK_CHECK_HANDLE(PhysicalDevice);
 	VK_CHECK_HANDLE(Surface);
@@ -308,28 +310,28 @@ bool LVK::CreateLogicalDevice(VkPhysicalDevice PhysicalDevice, VkSurfaceKHR Surf
 	return (Result == VK_SUCCESS);
 }
 
-void LVK::DestroyDevice(VkDevice& Device, const VkAllocationCallbacks *Allocator)
+void Locus::LVK::DestroyDevice(VkDevice& Device, const VkAllocationCallbacks *Allocator)
 {
 	vkDestroyDevice(Device, Allocator);
 }
 
-bool LVK::CreateSurface(const Window *Window, VkInstance Instance, VkSurfaceKHR &OutSurface, const VkAllocationCallbacks *Allocator)
+bool Locus::LVK::CreateSurface(const Window *Window, VkInstance Instance, VkSurfaceKHR &OutSurface, const VkAllocationCallbacks *Allocator)
 {
 	VK_CHECK_HANDLE(Instance);
 	return Window->CreateVulkanSurface(Instance, OutSurface);
 }
 
-void LVK::DestroySurface(VkInstance Instance, VkSurfaceKHR& Surface, const VkAllocationCallbacks *Allocator)
+void Locus::LVK::DestroySurface(VkInstance Instance, VkSurfaceKHR& Surface, const VkAllocationCallbacks *Allocator)
 {
 	vkDestroySurfaceKHR(Instance, Surface, Allocator);
 }
 
-VkSurfaceFormatKHR LVK::ChooseSwapchainSurfaceFormat(const TArray<VkSurfaceFormatKHR>& AvailableFormats)
+VkSurfaceFormatKHR Locus::LVK::ChooseSwapchainSurfaceFormat(const TArray<VkSurfaceFormatKHR>& AvailableFormats)
 {
 	for (i32 i = 0; i < AvailableFormats.Length(); i++)
 	{
 		const auto& AvailableFormat = AvailableFormats.GetElement(i);
-		if (AvailableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && AvailableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+		if (AvailableFormat.format == VK_FORMAT_B8G8R8A8_UNORM && AvailableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
 		{
 			return AvailableFormat;
 		}
@@ -338,7 +340,7 @@ VkSurfaceFormatKHR LVK::ChooseSwapchainSurfaceFormat(const TArray<VkSurfaceForma
 	return AvailableFormats.GetElement(0);
 }
 
-VkPresentModeKHR LVK::ChooseSwapchainPresentMode(const TArray<VkPresentModeKHR>& AvailablePresentModes)
+VkPresentModeKHR Locus::LVK::ChooseSwapchainPresentMode(const TArray<VkPresentModeKHR>& AvailablePresentModes)
 {
 	for (i32 i = 0; i < AvailablePresentModes.Length(); i++)
 	{
@@ -352,7 +354,7 @@ VkPresentModeKHR LVK::ChooseSwapchainPresentMode(const TArray<VkPresentModeKHR>&
 	return VK_PRESENT_MODE_FIFO_KHR;
 }
 
-VkExtent2D LVK::ChooseSwapchainExtent(const Window* Window, const VkSurfaceCapabilitiesKHR& Capabilities)
+VkExtent2D Locus::LVK::ChooseSwapchainExtent(const Window* Window, const VkSurfaceCapabilitiesKHR& Capabilities)
 {
 	if (Capabilities.currentExtent.width != UINT32_MAX)
 	{
@@ -373,17 +375,18 @@ VkExtent2D LVK::ChooseSwapchainExtent(const Window* Window, const VkSurfaceCapab
 	
 		return Actual;
 	}
+	
 }
 
-VkShaderModule LVK::CreateShaderModule(VkDevice Device, const VkAllocationCallbacks* Allocator, const u8* Code, arch CodeSize)
+VkRenderingAttachmentInfo Locus::LVK::RenderingAttachmentInfo(VkImageView View, VkClearValue* Clear, VkImageLayout Layout)
 {
-	VkShaderModuleCreateInfo ShaderModuleCreateInfo = {
-		.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-		.codeSize = CodeSize,
-		.pCode = reinterpret_cast<const u32*>(Code)
+	return {
+		.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+		.pNext = nullptr,
+		.imageView = View,
+		.imageLayout = Layout,
+		.loadOp = Clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD,
+		.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+		.clearValue = Clear ? *Clear : VkClearValue{}
 	};
-	
-	VkShaderModule ShaderModule;
-	LCheck(vkCreateShaderModule(Device, &ShaderModuleCreateInfo, Allocator, &ShaderModule) == VK_SUCCESS);
-	return ShaderModule;
 }

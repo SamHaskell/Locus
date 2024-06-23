@@ -2,9 +2,12 @@
 
 #include "Base/Asserts.hpp"
 #include "Base/Defines.hpp"
-#include "Platform/LSDL/LSDLPlatform.hpp"
+
 #include <chrono>
 #include <thread>
+#include <fstream>
+
+#include "Platform/LSDL/LSDLPlatform.hpp"
 
 namespace Locus
 {
@@ -32,6 +35,32 @@ namespace Locus
 		{
 			LAssert(sInitialized);
 			std::this_thread::sleep_for(std::chrono::milliseconds(Milliseconds));
+		}
+		
+		bool FileGetSize(const char* Path, arch& Size)
+		{
+			std::ifstream File(Path, std::ios::ate | std::ios::binary);
+			if (!File.is_open())
+			{
+				return false;
+			}
+			
+			Size = File.tellg();
+			File.close();
+			return true;
+		}
+		
+		bool FileReadBytes(const char* Path, u8* Data, arch Size)
+		{
+			std::ifstream File(Path, std::ios::binary);
+			if (!File.is_open())
+			{
+				return false;
+			}
+			
+			File.read((char*)Data, Size);
+			File.close();
+			return true;
 		}
 	}
 };

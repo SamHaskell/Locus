@@ -6,7 +6,7 @@
 
 using namespace Locus;
 
-namespace LVK
+namespace Locus::LVK
 {
 	bool CreateInstance(VkInstance& OutInstance, const TArray<const char*>& RequiredExtensions, const TArray<const char*>& ValidationLayers, const VkAllocationCallbacks *Allocator = nullptr);
 	void DestroyInstance(VkInstance& Instance);
@@ -32,5 +32,5 @@ namespace LVK
 	VkPresentModeKHR ChooseSwapchainPresentMode(const TArray<VkPresentModeKHR>& AvailablePresentModes);
 	VkExtent2D ChooseSwapchainExtent(const Window* Window, const VkSurfaceCapabilitiesKHR& Capabilities);
 	
-	VkShaderModule CreateShaderModule(VkDevice Device, const VkAllocationCallbacks* Allocator, const u8* Code, arch CodeSize);
+	VkRenderingAttachmentInfo RenderingAttachmentInfo(VkImageView View, VkClearValue* Clear, VkImageLayout Layout);
 }

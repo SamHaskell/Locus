@@ -5,9 +5,11 @@
 #include "LVKImage.hpp"
 #include "LVKSwapchain.hpp"
 #include "LVKTypes.hpp"
+#include "Platform/LVK/LVKDescriptor.hpp"
 
 #include <deque>
 #include <functional>
+#include <vulkan/vulkan_core.h>
 
 namespace Locus
 {
@@ -43,45 +45,63 @@ namespace Locus
 		~LVKGraphicsDevice() override;
 		
 		virtual void TestDraw() override;
+		void DrawImGui(VkCommandBuffer Cmd, VkImageView TargetView);
 		
 		inline VkInstance GetInstance() const { return m_Instance; }
 		inline VkPhysicalDevice GetPhysicalDevice() const { return m_PhysicalDevice; }
 		inline VkDevice GetDevice() const { return m_Device; }
 		inline VkSurfaceKHR GetSurface() const { return m_Surface; }
-		
 		LVKFrameResources& GetCurrentFrame() { return m_FrameResources[m_FrameNumber % FRAMES_IN_FLIGHT]; }
 	
 	private:
-		void CreateDevice(const Window* Window);
-		void DestroyDevice();
+		void SetupDevice(const Window* Window);
+		void SetupAllocator();
+		void SetupSwapchain(const Window* Window);
+		void SetupFrameResources();
+		void SetupDescriptors();
+		void SetupPipelines();
+		void SetupBackgroundPipelines();
 		
-		void CreateSwapchain(const Window* Window);
-		void DestroySwapchain();
+		void SetupTrianglePipeline();
 		
-		void CreateFrameResources();
-		void DestroyFrameResources();
+		void SetupImGui(const Window* Window);
 		
 		LVKConfig m_Config;
 	
+		// Device?
+		
 		VkInstance m_Instance = VK_NULL_HANDLE;
 		VkDebugUtilsMessengerEXT m_DebugMessenger = VK_NULL_HANDLE;
 		VkPhysicalDevice m_PhysicalDevice = VK_NULL_HANDLE;
 		VkDevice m_Device = VK_NULL_HANDLE;
 		VkSurfaceKHR m_Surface = VK_NULL_HANDLE;
 		
-		VmaAllocator m_Allocator;
-		LVKDeletionQueue m_DeletionQueue;
-		
-		LVKSwapchain m_Swapchain;
-		
-		LVKImage m_DrawImage;
-		VkExtent2D m_DrawExtent;
-		
 		LVKQueueFamilyIndices m_QueueFamilyIndices;
 		VkQueue m_GraphicsQueue;
 		VkQueue m_PresentQueue;
 		
+		VmaAllocator m_Allocator;
+		LVKDeletionQueue m_DeletionQueue;
+		
+		// Swapchain?
+		
+		LVKSwapchain m_Swapchain;
+		LVKImage m_DrawImage;
+		VkExtent2D m_DrawExtent;
+		
+		// ???
+		
 		u32 m_FrameNumber = 0;
 		LVKFrameResources m_FrameResources[FRAMES_IN_FLIGHT];
+		
+		LVKDescriptorAllocator m_DescriptorAllocator;
+		VkDescriptorSet m_DrawImageDescriptorSet;
+		VkDescriptorSetLayout m_DrawImageDescriptorLayout;
+		
+		VkPipeline m_GradientPipeline;
+		VkPipelineLayout m_GradientPipelineLayout;
+		
+		VkPipeline m_TrianglePipeline;
+		VkPipelineLayout m_TrianglePipelineLayout;
 	};
 }

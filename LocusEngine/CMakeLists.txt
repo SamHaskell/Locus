@@ -33,6 +33,7 @@ set(IMGUI_SOURCE_FILES
 	${CMAKE_CURRENT_SOURCE_DIR}/vendor/imgui/imgui_widgets.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/vendor/imgui/backends/imgui_impl_sdl2.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/vendor/imgui/backends/imgui_impl_opengl3.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/vendor/imgui/backends/imgui_impl_vulkan.cpp
 )
 
 set(GLAD_INCLUDE_DIRS
@@ -69,6 +70,8 @@ set(PLATFORM_SOURCE_FILES
 
 	${CMAKE_CURRENT_SOURCE_DIR}/src/Platform/LVK/LVKHelpers.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/src/Platform/LVK/LVKImage.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/src/Platform/LVK/LVKPipeline.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/src/Platform/LVK/LVKDescriptor.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/src/Platform/LVK/LVKGraphicsDevice.cpp
 	
 	${CMAKE_CURRENT_SOURCE_DIR}/src/Platform/LSDL/LSDLWindow.cpp

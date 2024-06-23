@@ -2,7 +2,6 @@
 
 #include "Asserts.hpp"
 #include "Defines.hpp"
-#include <cstddef>
 
 namespace Locus
 {
@@ -64,6 +63,12 @@ namespace Locus
 					m_Capacity = newCapacity;
 				}
 				m_Data[m_Count - 1] = value;
+			}
+			
+			void Clear()
+			{
+				m_Count = 0;
+				memset(m_Data, 0, sizeof(T) * m_Capacity);
 			}
 			
 			void Resize(arch capacity)

@@ -14,7 +14,7 @@ namespace Locus
 	};
 }
 
-namespace LVK
+namespace Locus::LVK
 {
 	VkImageCreateInfo ImageCreateInfo(VkFormat Format, VkImageUsageFlags UsageFlags, VkExtent3D Extent);
 	VkImageViewCreateInfo ImageViewCreateInfo(VkFormat Format, VkImage Image, VkImageAspectFlags AspectFlags);
