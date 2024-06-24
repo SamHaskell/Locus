@@ -3,6 +3,7 @@
 #include "../src/Base/Base.hpp"
 
 #include "../src/Core/Engine.hpp"
+#include "../src/Core/Time.hpp"
 
 #include "../src/Math/Numerics.hpp"
 

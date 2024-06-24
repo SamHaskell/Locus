@@ -5,10 +5,18 @@
 #include "LVKCommon.hpp"
 #include "LVKTypes.hpp"
 #include "LVKResources.hpp"
+#include "imgui_internal.h"
 
 #include <deque>
 #include <vma/vk_mem_alloc.h>
 #include <vulkan/vulkan_core.h>
+
+/*
+	TODO:
+	- Implement window resizing
+	- Implement actual multiple window support
+	- Cleanup, sort out the vulkan validation messages
+*/
 
 namespace Locus
 {
@@ -26,11 +34,34 @@ namespace Locus
 		VkSemaphore ImageAvailableSemaphore;
 		VkSemaphore RenderFinishedSemaphore;
 		VkFence InFlightFence;
-		
 		VkCommandPool CommandPool;
 		VkCommandBuffer CommandBuffer;
-		
-		LVKDeletionQueue DeletionQueue;
+		LVKDeletionQueue PerFrameDeletionQueue;
+	};
+	
+	struct LVKGraphicsDevice
+	{
+		LVKConfig Config = {};
+		VkInstance Instance = VK_NULL_HANDLE;
+		VkDebugUtilsMessengerEXT DebugMessenger = VK_NULL_HANDLE;
+		VkPhysicalDevice PhysicalDevice = VK_NULL_HANDLE;
+		VkDevice Device = VK_NULL_HANDLE;
+		VkDescriptorPool ImGuiDescriptorPool = VK_NULL_HANDLE;
+		VmaAllocator Allocator;
+		LVKQueueFamilyIndices QueueFamilyIndices {};
+		VkQueue GraphicsQueue;
+		VkQueue PresentQueue;
+		LVKDeletionQueue GlobalDeletionQueue;
+	};
+	
+	struct LVKGraphicsContext
+	{
+		VkSurfaceKHR Surface;
+		LVKSwapchain Swapchain;
+		u32 FrameNumber = 0;
+		LVKFrameResources FrameResources[FRAMES_IN_FLIGHT];
+		LVKDeletionQueue PerContextDeletionQueue;
+		ImGuiContext* ImGuiContext = nullptr;
 	};
 	
 	class LVKGraphicsManager : public GraphicsManager
@@ -39,34 +70,19 @@ namespace Locus
 		LVKGraphicsManager();
 		~LVKGraphicsManager();
 		
-		void Init(const WindowHandle Window) override;
-		void TestDraw() override;
+		RenderContextHandle CreateRenderContext(const WindowHandle Window) override;
+
+		void TestDraw() override;		
 		
 	protected:
-		LVKFrameResources& GetCurrentFrame() { return m_FrameResources[m_FrameNumber % FRAMES_IN_FLIGHT]; }
+		void DrawImGui(ImGuiContext* Context, VkCommandBuffer Cmd, std::function<void()> DrawFunction);
+		
+		LVKFrameResources& GetCurrentFrame() { return m_GraphicsContext.FrameResources[m_GraphicsContext.FrameNumber % FRAMES_IN_FLIGHT]; }
 	
-		// These should certainly be global
-		LVKConfig m_Config = {};
-		VkInstance m_Instance = VK_NULL_HANDLE;
-		VkDebugUtilsMessengerEXT m_DebugMessenger = VK_NULL_HANDLE;
-		VkSurfaceKHR m_Surface = VK_NULL_HANDLE;
-		VkPhysicalDevice m_PhysicalDevice = VK_NULL_HANDLE;
-		VkDevice m_Device = VK_NULL_HANDLE;
-		
-		LVKQueueFamilyIndices m_QueueFamilyIndices {};
-		VkQueue m_GraphicsQueue;
-		VkQueue m_PresentQueue;
-		VkExtent2D m_DrawExtent;
-		
-		VmaAllocator m_Allocator;
-		LVKDeletionQueue m_DeletionQueue;
-		LVKSwapchain m_Swapchain;
-		
-		u32 m_FrameNumber = 0;
-		LVKFrameResources m_FrameResources[FRAMES_IN_FLIGHT];
+		LVKGraphicsDevice m_GraphicsDevice;
+		LVKGraphicsContext m_GraphicsContext;
 		
 		VkPipelineLayout m_TrianglePipelineLayout;
 		VkPipeline m_TrianglePipeline;
-		
 	};
 }

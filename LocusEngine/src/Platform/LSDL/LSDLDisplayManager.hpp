@@ -5,6 +5,17 @@
 
 struct SDL_Window;
 
+/*
+	Display manager handles all platform windowing and input events.
+	For now, we're using SDL2 to handle this.
+	
+	You can have multiple windows, but we keep track of a main window.
+	- The main window is the first window created.
+	- If the main window is shut down, the application will exit.
+	- The main window is used to initialize the graphics API.
+	- The main window is used to create the main rendering context.
+*/
+
 namespace Locus
 {
 	struct LSDLWindow

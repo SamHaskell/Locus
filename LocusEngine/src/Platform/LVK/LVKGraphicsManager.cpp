@@ -1,10 +1,14 @@
 #include "LVKGraphicsManager.hpp"
 
+#include "Base/Asserts.hpp"
+#include "Base/Handles.hpp"
 #include "LVKHelpers.hpp"
 #include "LVKResources.hpp"
 
 #include "Core/DisplayManager.hpp"
+#include "Platform/LVK/LVKCommon.hpp"
 #include "Platform/Platform.hpp"
+#include "imgui_internal.h"
 
 #define VMA_IMPLEMENTATION
 #include "vma/vk_mem_alloc.h"
@@ -32,68 +36,122 @@ namespace Locus
 	
 	LVKGraphicsManager::LVKGraphicsManager()
 	{
+		LAssertMsg(DisplayManager::GetPtr() != nullptr, "DisplayManager must be initialized before GraphicsManager!");
 		
-	}
-	
-	LVKGraphicsManager::~LVKGraphicsManager()
-	{
-		m_DeletionQueue.Flush();
-	}
-	
-	void LVKGraphicsManager::Init(const WindowHandle Window)
-	{
-		// Config
+		/*
+			We initialize Vulkan by creating a dummy window, querying what extensions
+			and layers are available, and then creating the Vulkan instance.
+			
+			1. Create a dummy window
+			2. Query extensions and layers
+			3. Create Vulkan instance
+			4. Create dummy surface
+			5. Choose physical device
+			6. Create logical device
+			7. Destroy dummy window & surface
+			8. Create allocator
+			9. Create ImGui descriptor pool
+			10. Profit ???
+	 	*/
+			
+		WindowHandle DummyWindow = DisplayManager::Get().CreateWindow("Dummy", 0, 0);
+		DisplayManager::Get().GetVulkanInstanceExtensions(DummyWindow, m_GraphicsDevice.Config.RequiredExtensions);
 		
-		DisplayManager::Get().GetVulkanInstanceExtensions(Window, m_Config.RequiredExtensions);
-		
-        m_Config.ValidationLayers.Push("VK_LAYER_KHRONOS_validation");
-
-        m_Config.RequiredDeviceFeatures = {/* Anything goes for now! */};
-
-        m_Config.RequiredDeviceExtensions.Push("VK_KHR_portability_subset");
-        m_Config.RequiredDeviceExtensions.Push(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
-
-        m_Config.AllowedDeviceTypes.Push(VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU);
-        m_Config.AllowedDeviceTypes.Push(VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU);
+        m_GraphicsDevice.Config.ValidationLayers.Push("VK_LAYER_KHRONOS_validation");
+        m_GraphicsDevice.Config.RequiredDeviceFeatures = {/* Anything goes for now! */};
+        m_GraphicsDevice.Config.RequiredDeviceExtensions.Push("VK_KHR_portability_subset");
+        m_GraphicsDevice.Config.RequiredDeviceExtensions.Push(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+        m_GraphicsDevice.Config.AllowedDeviceTypes.Push(VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU);
+        m_GraphicsDevice.Config.AllowedDeviceTypes.Push(VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU);
 		
         // Device
         
-		LVK::CreateInstance(m_Instance, m_Config.RequiredExtensions, m_Config.ValidationLayers);
-		VK_CHECK_HANDLE(m_Instance);
+        VkSurfaceKHR DummySurface;
+        
+		LVK::CreateInstance(m_GraphicsDevice.Instance, m_GraphicsDevice.Config.RequiredExtensions, m_GraphicsDevice.Config.ValidationLayers);
+		VK_CHECK_HANDLE(m_GraphicsDevice.Instance);
       
-		LVK::CreateSurface(Window, m_Instance, m_Surface, nullptr);
-		VK_CHECK_HANDLE(m_Surface);
+		LVK::CreateSurface(DummyWindow, m_GraphicsDevice.Instance, DummySurface, nullptr);
+		VK_CHECK_HANDLE(DummySurface);
       
-		LVK::ChoosePhysicalDevice(m_Instance, m_Surface, m_PhysicalDevice, m_Config.RequiredDeviceFeatures, m_Config.AllowedDeviceTypes, m_Config.RequiredDeviceExtensions);
-		VK_CHECK_HANDLE(m_PhysicalDevice);
+		LVK::ChoosePhysicalDevice(m_GraphicsDevice.Instance, DummySurface, m_GraphicsDevice.PhysicalDevice, m_GraphicsDevice.Config.RequiredDeviceFeatures, m_GraphicsDevice.Config.AllowedDeviceTypes, m_GraphicsDevice.Config.RequiredDeviceExtensions);
+		VK_CHECK_HANDLE(m_GraphicsDevice.PhysicalDevice);
 		
-		LVK::CreateLogicalDevice(m_PhysicalDevice, m_Surface, m_Device, m_QueueFamilyIndices, m_Config.RequiredDeviceFeatures, m_Config.RequiredDeviceExtensions, m_Config.ValidationLayers);
-		VK_CHECK_HANDLE(m_Device);	
+		LVK::CreateLogicalDevice(m_GraphicsDevice.PhysicalDevice, DummySurface, m_GraphicsDevice.Device, m_GraphicsDevice.QueueFamilyIndices, m_GraphicsDevice.Config.RequiredDeviceFeatures, m_GraphicsDevice.Config.RequiredDeviceExtensions, m_GraphicsDevice.Config.ValidationLayers);
+		VK_CHECK_HANDLE(m_GraphicsDevice.Device);	
 		
-		vkGetDeviceQueue(m_Device, m_QueueFamilyIndices.GraphicsFamilyIndex, 0, &m_GraphicsQueue);
-		vkGetDeviceQueue(m_Device, m_QueueFamilyIndices.PresentFamilyIndex, 0, &m_PresentQueue);
+		vkGetDeviceQueue(m_GraphicsDevice.Device, m_GraphicsDevice.QueueFamilyIndices.GraphicsFamilyIndex, 0, &m_GraphicsDevice.GraphicsQueue);
+		vkGetDeviceQueue(m_GraphicsDevice.Device, m_GraphicsDevice.QueueFamilyIndices.PresentFamilyIndex, 0, &m_GraphicsDevice.PresentQueue);
 		
-        DisplayManager::Get().GetWindowFramebufferSize(Window, m_DrawExtent.width, m_DrawExtent.height);
+		LVK::DestroySurface(m_GraphicsDevice.Instance, DummySurface);
+		DisplayManager::Get().DestroyWindow(DummyWindow);
 		
-		m_DeletionQueue.Push([&](){
-			LVK::DestroyDevice(m_Device);
-			LVK::DestroySurface(m_Instance, m_Surface);
-			LVK::DestroyInstance(m_Instance);	
+		m_GraphicsDevice.GlobalDeletionQueue.Push([&](){
+			LVK::DestroyDevice(m_GraphicsDevice.Device);
+			LVK::DestroyInstance(m_GraphicsDevice.Instance);	
 		});
 		
 		// Allocator
 		
 		VmaAllocatorCreateInfo AllocatorInfo = {
             .flags = 0,
-            .physicalDevice = m_PhysicalDevice,
-            .device = m_Device,
-            .instance = m_Instance,
+            .physicalDevice = m_GraphicsDevice.PhysicalDevice,
+            .device = m_GraphicsDevice.Device,
+            .instance = m_GraphicsDevice.Instance,
         };
-        vmaCreateAllocator(&AllocatorInfo, &m_Allocator);
-        m_DeletionQueue.Push([&]() { vmaDestroyAllocator(m_Allocator); });
-        
-        // Query for swapchain details
-		LVKSwapchainSupportDetails SwapchainSupportDetails = LVK::QuerySwapchainSupport(m_Surface, m_PhysicalDevice);
+        vmaCreateAllocator(&AllocatorInfo, &m_GraphicsDevice.Allocator);
+        m_GraphicsDevice.GlobalDeletionQueue.Push([&]() { vmaDestroyAllocator(m_GraphicsDevice.Allocator); });
+        		
+		// ImGui
+		
+		VkDescriptorPoolSize PoolSizes[] = { { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
+			{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
+			{ VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000 },
+			{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000 },
+			{ VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000 },
+			{ VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000 },
+			{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000 },
+			{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000 },
+			{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000 },
+			{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000 },
+			{ VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000 } };
+		
+		VkDescriptorPoolCreateInfo PoolInfo = {
+			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+			.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
+			.maxSets = 1000,
+			.poolSizeCount = 11,
+			.pPoolSizes = PoolSizes
+		};
+		
+		VK_CHECK_RESULT(vkCreateDescriptorPool(m_GraphicsDevice.Device, &PoolInfo, nullptr, &m_GraphicsDevice.ImGuiDescriptorPool));
+		
+		m_GraphicsDevice.GlobalDeletionQueue.Push([=](){
+			ImGui_ImplVulkan_Shutdown();
+			vkDestroyDescriptorPool(m_GraphicsDevice.Device, m_GraphicsDevice.ImGuiDescriptorPool, nullptr);
+		});
+	}
+	
+	LVKGraphicsManager::~LVKGraphicsManager()
+	{
+		
+		
+		m_GraphicsDevice.GlobalDeletionQueue.Flush();
+	}
+	
+	RenderContextHandle LVKGraphicsManager::CreateRenderContext(const WindowHandle Window)
+	{
+		VK_CHECK_HANDLE(m_GraphicsDevice.Instance);
+		
+		// Make the surface
+		LVK::CreateSurface(Window, m_GraphicsDevice.Instance, m_GraphicsContext.Surface);
+		
+		m_GraphicsDevice.GlobalDeletionQueue.Push([&](){
+			LVK::DestroySurface(m_GraphicsDevice.Instance, m_GraphicsContext.Surface);
+		});
+		
+		// Query for swapchain details
+		LVKSwapchainSupportDetails SwapchainSupportDetails = LVK::QuerySwapchainSupport(m_GraphicsContext.Surface, m_GraphicsDevice.PhysicalDevice);
 		
 		VkSurfaceFormatKHR SurfaceFormat = LVK::ChooseSwapchainSurfaceFormat(SwapchainSupportDetails.Formats);
 		VkPresentModeKHR PresentMode = LVK::ChooseSwapchainPresentMode(SwapchainSupportDetails.PresentModes);
@@ -101,12 +159,12 @@ namespace Locus
 		
 		u32 ImageCount = SwapchainSupportDetails.Capabilities.minImageCount + 1;
 		if (SwapchainSupportDetails.Capabilities.maxImageCount > 0 && ImageCount > SwapchainSupportDetails.Capabilities.maxImageCount) {
-          		ImageCount = SwapchainSupportDetails.Capabilities.maxImageCount;
+			ImageCount = SwapchainSupportDetails.Capabilities.maxImageCount;
 		}
 		
 		VkSwapchainCreateInfoKHR SwapchainCreateInfo = {
 			.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-			.surface = m_Surface,
+			.surface = m_GraphicsContext.Surface,
 			.minImageCount = ImageCount,
 			.imageFormat = SurfaceFormat.format,
 			.imageColorSpace = SurfaceFormat.colorSpace,
@@ -123,7 +181,7 @@ namespace Locus
 			.oldSwapchain = VK_NULL_HANDLE
 		};
 		
-		LVKQueueFamilyIndices QueueFamilyIndices = LVK::FindPhysicalDeviceQueueFamilies(m_PhysicalDevice, m_Surface);
+		LVKQueueFamilyIndices QueueFamilyIndices = LVK::FindPhysicalDeviceQueueFamilies(m_GraphicsDevice.PhysicalDevice, m_GraphicsContext.Surface);
 		u32 Indices[] = {QueueFamilyIndices.GraphicsFamilyIndex, QueueFamilyIndices.PresentFamilyIndex};
 		if (Indices[0] != Indices[1])
 		{
@@ -132,28 +190,28 @@ namespace Locus
 			SwapchainCreateInfo.pQueueFamilyIndices = Indices;
 		}
 		
-		VK_CHECK_RESULT(vkCreateSwapchainKHR(m_Device, &SwapchainCreateInfo, nullptr, &m_Swapchain.Swapchain));
+		VK_CHECK_RESULT(vkCreateSwapchainKHR(m_GraphicsDevice.Device, &SwapchainCreateInfo, nullptr, &m_GraphicsContext.Swapchain.Swapchain));
 		
 		// Store the details and grab the images
 		
-		m_Swapchain.Details.Extent = Extent;
-		m_Swapchain.Details.ImageFormat = SurfaceFormat.format;
-		m_Swapchain.Details.ImageCount = ImageCount;
+		m_GraphicsContext.Swapchain.Details.Extent = Extent;
+		m_GraphicsContext.Swapchain.Details.ImageFormat = SurfaceFormat.format;
+		m_GraphicsContext.Swapchain.Details.ImageCount = ImageCount;
 		
-		vkGetSwapchainImagesKHR(m_Device, m_Swapchain.Swapchain, &m_Swapchain.Details.ImageCount, nullptr);
-		m_Swapchain.Images.Reserve(m_Swapchain.Details.ImageCount);
-		vkGetSwapchainImagesKHR(m_Device, m_Swapchain.Swapchain, &m_Swapchain.Details.ImageCount, m_Swapchain.Images.Data());
+		vkGetSwapchainImagesKHR(m_GraphicsDevice.Device, m_GraphicsContext.Swapchain.Swapchain, &m_GraphicsContext.Swapchain.Details.ImageCount, nullptr);
+		m_GraphicsContext.Swapchain.Images.Reserve(m_GraphicsContext.Swapchain.Details.ImageCount);
+		vkGetSwapchainImagesKHR(m_GraphicsDevice.Device, m_GraphicsContext.Swapchain.Swapchain, &m_GraphicsContext.Swapchain.Details.ImageCount, m_GraphicsContext.Swapchain.Images.Data());
 		
 		// Create the image views
 		
-		m_Swapchain.ImageViews.Reserve(m_Swapchain.Details.ImageCount);
-		for (arch i = 0; i < m_Swapchain.Images.Length(); i++)
+		m_GraphicsContext.Swapchain.ImageViews.Reserve(m_GraphicsContext.Swapchain.Details.ImageCount);
+		for (arch i = 0; i < m_GraphicsContext.Swapchain.Images.Length(); i++)
 		{
 			VkImageViewCreateInfo ViewCreateInfo = {
 				.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-				.image = m_Swapchain.Images[i],
+				.image = m_GraphicsContext.Swapchain.Images[i],
 				.viewType = VK_IMAGE_VIEW_TYPE_2D,
-				.format = m_Swapchain.Details.ImageFormat,
+				.format = m_GraphicsContext.Swapchain.Details.ImageFormat,
 				.components = {
 					.r = VK_COMPONENT_SWIZZLE_IDENTITY,
 					.g = VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -168,23 +226,23 @@ namespace Locus
 					.layerCount = 1,
 				},
 			};
-			
-			VK_CHECK_RESULT(vkCreateImageView(m_Device, &ViewCreateInfo, nullptr, &m_Swapchain.ImageViews[i]));
+		
+			VK_CHECK_RESULT(vkCreateImageView(m_GraphicsDevice.Device, &ViewCreateInfo, nullptr, &m_GraphicsContext.Swapchain.ImageViews[i]));
 		}
 		
-		m_DeletionQueue.Push([&](){
-			vkDeviceWaitIdle(m_Device);
-			vkDestroySwapchainKHR(m_Device, m_Swapchain.Swapchain, nullptr);
-			for (arch i = 0; i < m_Swapchain.ImageViews.Length(); i++)
+		m_GraphicsDevice.GlobalDeletionQueue.Push([&](){
+			vkDeviceWaitIdle(m_GraphicsDevice.Device);
+			vkDestroySwapchainKHR(m_GraphicsDevice.Device, m_GraphicsContext.Swapchain.Swapchain, nullptr);
+			for (arch i = 0; i < m_GraphicsContext.Swapchain.ImageViews.Length(); i++)
 			{
-				vkDestroyImageView(m_Device, m_Swapchain.ImageViews[i], nullptr);
+				vkDestroyImageView(m_GraphicsDevice.Device, m_GraphicsContext.Swapchain.ImageViews[i], nullptr);
 			}
 		});
 		
 		// Renderpass
-		
+			
 		VkAttachmentDescription ColorAttachment = {
-			.format = m_Swapchain.Details.ImageFormat,
+			.format = m_GraphicsContext.Swapchain.Details.ImageFormat,
 			.samples = VK_SAMPLE_COUNT_1_BIT,
 			.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
 			.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -193,7 +251,7 @@ namespace Locus
 			.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
 			.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
 		};
-		
+	
 		VkAttachmentReference ColorAttachmentRef = {
 			.attachment = 0,
 			.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
@@ -213,35 +271,35 @@ namespace Locus
 			.pSubpasses = &Subpass
 		};
 		
-		VK_CHECK_RESULT(vkCreateRenderPass(m_Device, &RenderPassInfo, nullptr, &m_Swapchain.RenderPass));
+		VK_CHECK_RESULT(vkCreateRenderPass(m_GraphicsDevice.Device, &RenderPassInfo, nullptr, &m_GraphicsContext.Swapchain.RenderPass));
 		
-		m_DeletionQueue.Push([&](){
-			vkDestroyRenderPass(m_Device, m_Swapchain.RenderPass, nullptr);
+		m_GraphicsDevice.GlobalDeletionQueue.Push([&](){
+			vkDestroyRenderPass(m_GraphicsDevice.Device, m_GraphicsContext.Swapchain.RenderPass, nullptr);
 		});
 		
 		// Create framebuffers
 		
-		m_Swapchain.Framebuffers.Reserve(m_Swapchain.Details.ImageCount);
-		for (arch i = 0; i < m_Swapchain.Framebuffers.Length(); i++)
+		m_GraphicsContext.Swapchain.Framebuffers.Reserve(m_GraphicsContext.Swapchain.Details.ImageCount);
+		for (arch i = 0; i < m_GraphicsContext.Swapchain.Framebuffers.Length(); i++)
 		{
-			VkImageView Attachments[] = {m_Swapchain.ImageViews[i]};
+			VkImageView Attachments[] = {m_GraphicsContext.Swapchain.ImageViews[i]};
 			VkFramebufferCreateInfo FramebufferInfo = {
 				.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-				.renderPass = m_Swapchain.RenderPass,
+				.renderPass = m_GraphicsContext.Swapchain.RenderPass,
 				.attachmentCount = 1,
 				.pAttachments = Attachments,
-				.width = m_Swapchain.Details.Extent.width,
-				.height = m_Swapchain.Details.Extent.height,
+				.width = m_GraphicsContext.Swapchain.Details.Extent.width,
+				.height = m_GraphicsContext.Swapchain.Details.Extent.height,
 				.layers = 1
 			};
 			
-			VK_CHECK_RESULT(vkCreateFramebuffer(m_Device, &FramebufferInfo, nullptr, &m_Swapchain.Framebuffers[i]));
+			VK_CHECK_RESULT(vkCreateFramebuffer(m_GraphicsDevice.Device, &FramebufferInfo, nullptr, &m_GraphicsContext.Swapchain.Framebuffers[i]));
 		}
-      
-		m_DeletionQueue.Push([&](){
-			for (arch i = 0; i < m_Swapchain.Framebuffers.Length(); i++)
+		      
+		m_GraphicsDevice.GlobalDeletionQueue.Push([&](){
+			for (arch i = 0; i < m_GraphicsContext.Swapchain.Framebuffers.Length(); i++)
 			{
-				vkDestroyFramebuffer(m_Device, m_Swapchain.Framebuffers[i], nullptr);
+				vkDestroyFramebuffer(m_GraphicsDevice.Device, m_GraphicsContext.Swapchain.Framebuffers[i], nullptr);
 			}
 		});
 		
@@ -251,22 +309,22 @@ namespace Locus
 			.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
 			.pNext = nullptr,
 			.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-			.queueFamilyIndex = m_QueueFamilyIndices.GraphicsFamilyIndex
+			.queueFamilyIndex = m_GraphicsDevice.QueueFamilyIndices.GraphicsFamilyIndex
 		};
 		
 		for (i32 i = 0; i < FRAMES_IN_FLIGHT; i++)
 		{
-			VK_CHECK_RESULT(vkCreateCommandPool(m_Device, &PoolCreateInfo, nullptr, &m_FrameResources[i].CommandPool));
+			VK_CHECK_RESULT(vkCreateCommandPool(m_GraphicsDevice.Device, &PoolCreateInfo, nullptr, &m_GraphicsContext.FrameResources[i].CommandPool));
 			
 			VkCommandBufferAllocateInfo AllocInfo = {
 				.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
 				.pNext = nullptr,
-				.commandPool = m_FrameResources[i].CommandPool,
+				.commandPool = m_GraphicsContext.FrameResources[i].CommandPool,
 				.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
 				.commandBufferCount = 1,
 			};
 			
-			VK_CHECK_RESULT(vkAllocateCommandBuffers(m_Device, &AllocInfo, &m_FrameResources[i].CommandBuffer));
+			VK_CHECK_RESULT(vkAllocateCommandBuffers(m_GraphicsDevice.Device, &AllocInfo, &m_GraphicsContext.FrameResources[i].CommandBuffer));
 		}
 		
 		VkFenceCreateInfo FenceCreateInfo = {
@@ -283,22 +341,20 @@ namespace Locus
 		
 		for (i32 i = 0; i < FRAMES_IN_FLIGHT; i++)
 		{
-			VK_CHECK_RESULT(vkCreateFence(m_Device, &FenceCreateInfo, nullptr, &m_FrameResources[i].InFlightFence));
-			VK_CHECK_RESULT(vkCreateSemaphore(m_Device, &SemaphoreCreateInfo, nullptr, &m_FrameResources[i].ImageAvailableSemaphore));
-			VK_CHECK_RESULT(vkCreateSemaphore(m_Device, &SemaphoreCreateInfo, nullptr, &m_FrameResources[i].RenderFinishedSemaphore));
+			VK_CHECK_RESULT(vkCreateFence(m_GraphicsDevice.Device, &FenceCreateInfo, nullptr, &m_GraphicsContext.FrameResources[i].InFlightFence));
+			VK_CHECK_RESULT(vkCreateSemaphore(m_GraphicsDevice.Device, &SemaphoreCreateInfo, nullptr, &m_GraphicsContext.FrameResources[i].ImageAvailableSemaphore));
+			VK_CHECK_RESULT(vkCreateSemaphore(m_GraphicsDevice.Device, &SemaphoreCreateInfo, nullptr, &m_GraphicsContext.FrameResources[i].RenderFinishedSemaphore));
 		}
 		
-		m_DeletionQueue.Push([&](){
-			vkDeviceWaitIdle(m_Device);
-			
+		m_GraphicsDevice.GlobalDeletionQueue.Push([&](){
+			vkDeviceWaitIdle(m_GraphicsDevice.Device);
 			for (i32 i = 0; i < FRAMES_IN_FLIGHT; i++)
 			{
-				vkDestroyFence(m_Device, m_FrameResources[i].InFlightFence, nullptr);
-				vkDestroySemaphore(m_Device, m_FrameResources[i].ImageAvailableSemaphore, nullptr);
-				vkDestroySemaphore(m_Device, m_FrameResources[i].RenderFinishedSemaphore, nullptr);
-				vkDestroyCommandPool(m_Device, m_FrameResources[i].CommandPool, nullptr);
-				
-				m_FrameResources[i].DeletionQueue.Flush();
+				vkDestroyFence(m_GraphicsDevice.Device, m_GraphicsContext.FrameResources[i].InFlightFence, nullptr);
+				vkDestroySemaphore(m_GraphicsDevice.Device, m_GraphicsContext.FrameResources[i].ImageAvailableSemaphore, nullptr);
+				vkDestroySemaphore(m_GraphicsDevice.Device, m_GraphicsContext.FrameResources[i].RenderFinishedSemaphore, nullptr);
+				vkDestroyCommandPool(m_GraphicsDevice.Device, m_GraphicsContext.FrameResources[i].CommandPool, nullptr);
+				m_GraphicsContext.FrameResources[i].PerFrameDeletionQueue.Flush();
 			}
 		});
 		
@@ -309,7 +365,7 @@ namespace Locus
 			.pSetLayouts = nullptr
 		};
 		
-		VK_CHECK_RESULT(vkCreatePipelineLayout(m_Device, &TriangleLayout, nullptr, &m_TrianglePipelineLayout));
+		VK_CHECK_RESULT(vkCreatePipelineLayout(m_GraphicsDevice.Device, &TriangleLayout, nullptr, &m_TrianglePipelineLayout));
 		
 		const char* VertShaderPath = "./build/LocusEngine/content/shaders/triangle.vert.spv";
 		
@@ -318,7 +374,7 @@ namespace Locus
 		u8 VertShaderCode[VertCodeSize];
 		LAssert(Platform::FileReadBytes(VertShaderPath, VertShaderCode, VertCodeSize));
 		
-		VkShaderModule VertShader = LVK::CreateShaderModule(m_Device, nullptr, VertShaderCode, VertCodeSize);
+		VkShaderModule VertShader = LVK::CreateShaderModule(m_GraphicsDevice.Device, nullptr, VertShaderCode, VertCodeSize);
 		
 		const char* FragShaderPath = "./build/LocusEngine/content/shaders/triangle.frag.spv";
 		
@@ -327,7 +383,7 @@ namespace Locus
 		u8 FragShaderCode[FragCodeSize];
 		LAssert(Platform::FileReadBytes(FragShaderPath, FragShaderCode, FragCodeSize));
 		
-		VkShaderModule FragShader = LVK::CreateShaderModule(m_Device, nullptr, FragShaderCode, FragCodeSize);
+		VkShaderModule FragShader = LVK::CreateShaderModule(m_GraphicsDevice.Device, nullptr, FragShaderCode, FragCodeSize);
 		
 		LVKPipelineFactory PipelineFactory;
 		PipelineFactory.Layout = m_TrianglePipelineLayout;
@@ -354,85 +410,61 @@ namespace Locus
 			.pSpecializationInfo = nullptr,
 		});
 		
-		m_TrianglePipeline = PipelineFactory.Create(m_Device, m_Swapchain.RenderPass);
+		m_TrianglePipeline = PipelineFactory.Create(m_GraphicsDevice.Device, m_GraphicsContext.Swapchain.RenderPass);
 		
-		vkDestroyShaderModule(m_Device, VertShader, nullptr);
-		vkDestroyShaderModule(m_Device, FragShader, nullptr);
+		vkDestroyShaderModule(m_GraphicsDevice.Device, VertShader, nullptr);
+		vkDestroyShaderModule(m_GraphicsDevice.Device, FragShader, nullptr);
 		
-		m_DeletionQueue.Push([&](){
-			vkDeviceWaitIdle(m_Device);
-			vkDestroyPipelineLayout(m_Device, m_TrianglePipelineLayout, nullptr);
-			vkDestroyPipeline(m_Device, m_TrianglePipeline, nullptr);
+		m_GraphicsDevice.GlobalDeletionQueue.Push([&](){
+			vkDeviceWaitIdle(m_GraphicsDevice.Device);
+			vkDestroyPipelineLayout(m_GraphicsDevice.Device, m_TrianglePipelineLayout, nullptr);
+			vkDestroyPipeline(m_GraphicsDevice.Device, m_TrianglePipeline, nullptr);
 		});
 		
-		// ImGui
+		m_GraphicsContext.ImGuiContext = ImGui::CreateContext();
 		
-		VkDescriptorPoolSize PoolSizes[] = { { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
-			{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
-			{ VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000 },
-			{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000 },
-			{ VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000 },
-			{ VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000 },
-			{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000 },
-			{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000 },
-			{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000 },
-			{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000 },
-			{ VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000 } };
+		ImGuiIO& IO = ImGui::GetIO();
+		IO.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+		IO.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
 		
-		VkDescriptorPoolCreateInfo PoolInfo = {
-			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-			.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
-			.maxSets = 1000,
-			.poolSizeCount = 11,
-			.pPoolSizes = PoolSizes
-		};
+		ImGui::StyleColorsDark();
 		
-		VkDescriptorPool ImGuiPool;
-		VK_CHECK_RESULT(vkCreateDescriptorPool(m_Device, &PoolInfo, nullptr, &ImGuiPool));
-		
-		// Init ImGui
-		
-		ImGui::CreateContext();
 		ImGui_ImplSDL2_InitForVulkan((SDL_Window*)DisplayManager::Get().GetNativeWindowHandle(Window));
-		
 		ImGui_ImplVulkan_InitInfo InitInfo = {
-			.Instance = m_Instance,
-			.PhysicalDevice = m_PhysicalDevice,
-			.Device = m_Device,
-			.Queue = m_GraphicsQueue,
-			.DescriptorPool = ImGuiPool,
-			.RenderPass = m_Swapchain.RenderPass,
-			.MinImageCount = 3,
-			.ImageCount = 3,
+			.Instance = m_GraphicsDevice.Instance,
+			.PhysicalDevice = m_GraphicsDevice.PhysicalDevice,
+			.Device = m_GraphicsDevice.Device,
+			.QueueFamily = m_GraphicsDevice.QueueFamilyIndices.GraphicsFamilyIndex,
+			.Queue = m_GraphicsDevice.GraphicsQueue,
+			.DescriptorPool = m_GraphicsDevice.ImGuiDescriptorPool,
+			.RenderPass = m_GraphicsContext.Swapchain.RenderPass,
+			.MinImageCount = m_GraphicsContext.Swapchain.Details.ImageCount,
+			.ImageCount = m_GraphicsContext.Swapchain.Details.ImageCount,
 			.MSAASamples = VK_SAMPLE_COUNT_1_BIT,
+			.Subpass = 0,
 			.UseDynamicRendering = false,
 			.PipelineRenderingCreateInfo = {
 				.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
 				.colorAttachmentCount = 1,
-				.pColorAttachmentFormats = &m_Swapchain.Details.ImageFormat
+				.pColorAttachmentFormats = &m_GraphicsContext.Swapchain.Details.ImageFormat
 			},
 		};
-		
 		ImGui_ImplVulkan_Init(&InitInfo);
-		ImGui_ImplVulkan_CreateFontsTexture();
 		
-		m_DeletionQueue.Push([=](){
-			ImGui_ImplVulkan_Shutdown();
-			vkDestroyDescriptorPool(m_Device, ImGuiPool, nullptr);
-		});
+		return HANDLE_INVALID;
 	}
 	
 	void LVKGraphicsManager::TestDraw()
 	{
 		LVKFrameResources& Frame = GetCurrentFrame();
-		VK_CHECK_RESULT(vkWaitForFences(m_Device, 1, &Frame.InFlightFence, VK_TRUE, UINT64_MAX));
+		VK_CHECK_RESULT(vkWaitForFences(m_GraphicsDevice.Device, 1, &Frame.InFlightFence, VK_TRUE, UINT64_MAX));
 		
-		Frame.DeletionQueue.Flush();
+		Frame.PerFrameDeletionQueue.Flush();
 		
-		VK_CHECK_RESULT(vkResetFences(m_Device, 1, &Frame.InFlightFence));
+		VK_CHECK_RESULT(vkResetFences(m_GraphicsDevice.Device, 1, &Frame.InFlightFence));
 		
 		u32 ImageIndex = 0;
-		VK_CHECK_RESULT(vkAcquireNextImageKHR(m_Device, m_Swapchain.Swapchain, UINT64_MAX, Frame.ImageAvailableSemaphore, nullptr, &ImageIndex));
+		VK_CHECK_RESULT(vkAcquireNextImageKHR(m_GraphicsDevice.Device, m_GraphicsContext.Swapchain.Swapchain, UINT64_MAX, Frame.ImageAvailableSemaphore, nullptr, &ImageIndex));
 		
 		VkCommandBuffer Cmd = Frame.CommandBuffer;
 		
@@ -445,17 +477,17 @@ namespace Locus
 		};
 		VK_CHECK_RESULT(vkBeginCommandBuffer(Cmd, &CommandBufferBeginInfo));
 		
-		LAssert(ImageIndex < m_Swapchain.Details.ImageCount);
+		LAssert(ImageIndex < m_GraphicsContext.Swapchain.Details.ImageCount);
 		
 		VkClearValue ClearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
 		
 		VkRenderPassBeginInfo RenderPassBeginInfo = {
 			.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-			.renderPass = m_Swapchain.RenderPass,
-			.framebuffer = m_Swapchain.Framebuffers[ImageIndex],
+			.renderPass = m_GraphicsContext.Swapchain.RenderPass,
+			.framebuffer = m_GraphicsContext.Swapchain.Framebuffers[ImageIndex],
 			.renderArea = {
 				.offset = {0, 0},
-				.extent = m_Swapchain.Details.Extent,
+				.extent = m_GraphicsContext.Swapchain.Details.Extent,
 			},
 			.clearValueCount = 1,
 			.pClearValues = &ClearColor
@@ -468,8 +500,8 @@ namespace Locus
 		VkViewport Viewport = {
 			.x = 0.0f,
 			.y = 0.0f,
-			.width = static_cast<f32>(m_Swapchain.Details.Extent.width),
-			.height = static_cast<f32>(m_Swapchain.Details.Extent.height),
+			.width = static_cast<f32>(m_GraphicsContext.Swapchain.Details.Extent.width),
+			.height = static_cast<f32>(m_GraphicsContext.Swapchain.Details.Extent.height),
 			.minDepth = 0.0f,
 			.maxDepth = 1.0f
 		};
@@ -478,14 +510,21 @@ namespace Locus
 		
 		VkRect2D Scissor = {
 			.offset = {0, 0},
-			.extent = m_Swapchain.Details.Extent
+			.extent = m_GraphicsContext.Swapchain.Details.Extent
 		};
 		
 		vkCmdSetScissor(Cmd, 0, 1, &Scissor);
 		
 		vkCmdDraw(Cmd, 3, 1, 0, 0);
+		
+		// ImGUI
+		DrawImGui(m_GraphicsContext.ImGuiContext, Cmd, [](){
+			ImGui::ShowDemoWindow();
+		});
 
 		vkCmdEndRenderPass(Cmd);
+		
+		ImGui::UpdatePlatformWindows();
 					
 		VK_CHECK_RESULT(vkEndCommandBuffer(Cmd));
 		
@@ -528,7 +567,7 @@ namespace Locus
 			.pSignalSemaphores = &Frame.RenderFinishedSemaphore,
 		};
 		
-		VK_CHECK_RESULT(vkQueueSubmit(m_GraphicsQueue, 1, &SubmitInfo, Frame.InFlightFence));
+		VK_CHECK_RESULT(vkQueueSubmit(m_GraphicsDevice.GraphicsQueue, 1, &SubmitInfo, Frame.InFlightFence));
 		
 		VkPresentInfoKHR PresentInfo = {
 			.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
@@ -536,11 +575,25 @@ namespace Locus
 			.waitSemaphoreCount = 1,
 			.pWaitSemaphores = &Frame.RenderFinishedSemaphore,
 			.swapchainCount = 1,
-			.pSwapchains = &m_Swapchain.Swapchain,
+			.pSwapchains = &m_GraphicsContext.Swapchain.Swapchain,
 			.pImageIndices = &ImageIndex,
 		};
 		
-		VK_CHECK_RESULT(vkQueuePresentKHR(m_PresentQueue, &PresentInfo));
-		m_FrameNumber ++;
+		VK_CHECK_RESULT(vkQueuePresentKHR(m_GraphicsDevice.PresentQueue, &PresentInfo));
+		m_GraphicsContext.FrameNumber ++;
+	}
+	
+	void LVKGraphicsManager::DrawImGui(ImGuiContext* Context, VkCommandBuffer Cmd, std::function<void()> DrawFunction)
+	{
+		ImGui::SetCurrentContext(Context);
+		ImGui_ImplVulkan_NewFrame();
+        ImGui_ImplSDL2_NewFrame();
+        ImGui::NewFrame();
+        
+        DrawFunction();
+        
+        ImGui::Render();
+        ImDrawData* DrawData = ImGui::GetDrawData();
+        ImGui_ImplVulkan_RenderDrawData(DrawData, Cmd);
 	}
 }

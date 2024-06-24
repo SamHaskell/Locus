@@ -114,7 +114,7 @@ namespace Locus
 		}
 		else
 		{
-			// Create a new slot, append to the end, increment size
+			// Create a new slot, append to the end, increment count
 			Handle = HandleCreate(m_Count);
 			m_Data[m_Count] = Value;
 			m_Handles[m_Count] = Handle;
@@ -130,14 +130,17 @@ namespace Locus
 		{
 			// Invalidate the handle, push the regenerated handle onto the freelist
 			m_FreeList.Push(HandleRegenerate(m_Handles[HandleIndex(Handle)]));
-			m_Handles[HandleIndex(Handle)] = HANDLE_INVALID;	
+			m_Handles[HandleIndex(Handle)] = HANDLE_INVALID;
+			return true;
 		}
+		
+		return false;
 	}
 	
 	template<typename T>
 	bool Pool<T>::IsValid(HandleType Handle) const
 	{
-		return (HandleIndex(Handle) < m_Size) && (Handle == m_Handles[Handle]);
+		return (Handle != HANDLE_INVALID) && (HandleIndex(Handle) < m_Size) && (Handle == m_Handles[HandleIndex(Handle)]);
 	}
 	
 	template<typename T>

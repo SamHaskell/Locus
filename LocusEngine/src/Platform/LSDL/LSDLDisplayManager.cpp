@@ -9,6 +9,7 @@
 #include "SDL.h"
 #include "SDL_video.h"
 #include "SDL_vulkan.h"
+#include "imgui_impl_sdl2.h"
 
 namespace Locus
 {
@@ -38,7 +39,7 @@ namespace Locus
 		 	Window.Flags
 		);
 		
-		LAssert(Window.NativeHandle != nullptr);
+		LAssert(Window.NativeHandle != NULL);
 		
 		WindowHandle WindowHandle = m_WindowPool.Create(Window);
 		return WindowHandle;
@@ -114,6 +115,8 @@ namespace Locus
 		SDL_Event Event;
 		while (SDL_PollEvent(&Event))
 		{
+			ImGui_ImplSDL2_ProcessEvent(&Event);
+			
 			if (Event.type == SDL_QUIT)
 			{
 				bShouldQuit = true;
