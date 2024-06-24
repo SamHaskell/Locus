@@ -391,3 +391,16 @@ VkRenderingAttachmentInfo Locus::LVK::RenderingAttachmentInfo(VkImageView View, 
 		.clearValue = Clear ? *Clear : VkClearValue{}
 	};
 }
+
+VkShaderModule Locus::LVK::CreateShaderModule(VkDevice Device, const VkAllocationCallbacks* Allocator, const u8* Code, arch CodeSize)
+{
+	VkShaderModuleCreateInfo ShaderModuleCreateInfo = {
+		.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+		.codeSize = CodeSize,
+		.pCode = reinterpret_cast<const u32*>(Code)
+	};
+	
+	VkShaderModule ShaderModule;
+	LCheck(vkCreateShaderModule(Device, &ShaderModuleCreateInfo, Allocator, &ShaderModule) == VK_SUCCESS);
+	return ShaderModule;
+}

@@ -1,7 +1,9 @@
 #pragma once
 
 #include "Base/Base.hpp"
+
 #include "Core/DisplayManager.hpp"
+#include "Graphics/GraphicsManager.hpp"
 
 namespace Locus
 {
@@ -13,6 +15,7 @@ namespace Locus
 	
 	private:
 		DisplayManager* m_DisplayManager;
+		GraphicsManager* m_GraphicsManager;
 		
 	
 	};

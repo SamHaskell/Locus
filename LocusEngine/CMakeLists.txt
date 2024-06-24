@@ -58,7 +58,7 @@ set(CORE_SOURCE_FILES
 )
 
 set(GRAPHICS_SOURCE_FILES
-	${CMAKE_CURRENT_SOURCE_DIR}/src/Graphics/GraphicsDevice.cpp
+
 )
 
 set(MATH_SOURCE_FILES
@@ -69,13 +69,11 @@ set(PLATFORM_SOURCE_FILES
 	${CMAKE_CURRENT_SOURCE_DIR}/src/Platform/Platform.cpp
 
 	${CMAKE_CURRENT_SOURCE_DIR}/src/Platform/LVK/LVKHelpers.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/src/Platform/LVK/LVKImage.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/src/Platform/LVK/LVKPipeline.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/src/Platform/LVK/LVKResources.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/src/Platform/LVK/LVKDescriptor.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/src/Platform/LVK/LVKGraphicsDevice.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/src/Platform/LVK/LVKGraphicsManager.cpp
 	
 	${CMAKE_CURRENT_SOURCE_DIR}/src/Platform/LSDL/LSDLDisplayManager.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/src/Platform/LSDL/LSDLPlatform.cpp
 )
 
 ###########################################################

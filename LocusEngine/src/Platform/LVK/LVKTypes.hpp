@@ -52,16 +52,3 @@ namespace Locus
 		const char* EntryPoint = "main";
 	};
 }
-
-
-#define VK_CHECK_RESULT(x)\
-	do {\
-		VkResult err = (x);\
-		LAssertMsg(err == VK_SUCCESS, string_VkResult(err));\
-	} while(0)
-	
-#define VK_CHECK_HANDLE(x)\
-	do {\
-		auto a = (x);\
-		LAssertMsg(a != VK_NULL_HANDLE, "Vulkan Error: Null Handle");\
-	} while(0)

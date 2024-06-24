@@ -1,98 +1,112 @@
 #include "LSDLDisplayManager.hpp"
 
+#include "Base/Asserts.hpp"
 #include "Base/Handles.hpp"
 #include "Base/Logging.hpp"
 
 #include "Core/DisplayManager.hpp"
 
-#include "SDL_events.h"
+#include "SDL.h"
 #include "SDL_video.h"
 #include "SDL_vulkan.h"
 
-
 namespace Locus
 {
+	LSDLDisplayManager::LSDLDisplayManager() : m_WindowPool(WINDOW_COUNT_MAX)
+	{
+		LAssert(SDL_InitSubSystem(SDL_INIT_VIDEO) == 0);
+	}
+	
+	LSDLDisplayManager::~LSDLDisplayManager()
+	{
+		SDL_QuitSubSystem(SDL_INIT_VIDEO);
+	}
+	
 	WindowHandle LSDLDisplayManager::CreateWindow(const char* Title, u32 Width, u32 Height)
 	{
-		HandleType Index = 0;
-		if(m_FreeList.Empty())
-		{
-			Index = m_HighestUnoccupiedSlot;
-			m_HighestUnoccupiedSlot ++;
-		}
-		else
-		{
-			Index = m_FreeList.Pop();
-		}
-		
-		m_WindowHandles[Index] = Handles::Regenerate(m_WindowHandles[Index] | Index);
-		
-		// Create the window.
-		
-		m_WindowData[Index].Title = Title;
-		m_WindowData[Index].Flags = SDL_WINDOW_SHOWN;
-		m_WindowData[Index].Flags = SDL_WINDOW_VULKAN;
-		
-		m_WindowData[Index].NativeHandle = SDL_CreateWindow(
-			m_WindowData[Index].Title, 
+		LSDLWindow Window = {
+			.Flags = SDL_WINDOW_SHOWN | SDL_WINDOW_VULKAN,
+			.Title = Title
+		};
+				
+		Window.NativeHandle = SDL_CreateWindow(
+			Window.Title, 
 			SDL_WINDOWPOS_CENTERED, 
 			SDL_WINDOWPOS_CENTERED, 
 			static_cast<i32>(Width), 
 			static_cast<i32>(Height),
-		 	m_WindowData[Index].Flags
+		 	Window.Flags
 		);
 		
-		return m_WindowHandles[Index];
+		LAssert(Window.NativeHandle != nullptr);
+		
+		WindowHandle WindowHandle = m_WindowPool.Create(Window);
+		return WindowHandle;
 	}
 	
 	void LSDLDisplayManager::DestroyWindow(WindowHandle Window)
 	{
-		if (m_WindowHandles[Handles::GetIndex(Window)] == Window)
-		{
-			// everything is good
-			LLOG(Display, Info, "Destroying window.");
-			SDL_DestroyWindow(m_WindowData[Handles::GetIndex(Window)].NativeHandle);
-			m_WindowHandles[Handles::GetIndex(Window)] = HANDLE_INVALID;
-			m_FreeList.Push(Handles::GetIndex(Window));
-		}
-		else
+		if (!m_WindowPool.IsValid(Window))
 		{
 			LLOG(Display, Warning, "Attempted to destroy a window with an invalid handle!");
-			// handle is invalid/outdated
-			// do nothing for now
+			return;
 		}
+		
+		SDL_DestroyWindow(m_WindowPool.Get(Window).NativeHandle);
+		m_WindowPool.Destroy(Window);
 	}
 	
 	void* LSDLDisplayManager::GetNativeWindowHandle(WindowHandle Window)
 	{
-		if (m_WindowHandles[Handles::GetIndex(Window)] == Window)
-		{
-			return (void*)m_WindowData[Handles::GetIndex(Window)].NativeHandle;
-		}
-		else
+		if (!m_WindowPool.IsValid(Window))
 		{
 			LLOG(Display, Warning, "Attempted to reference a window with an invalid handle!");
 			return nullptr;
 		}
+		
+		return m_WindowPool.Get(Window).NativeHandle;
 	}
 	
 	void LSDLDisplayManager::GetWindowFramebufferSize(WindowHandle Window, u32& Width, u32& Height)
 	{
-		if (m_WindowHandles[Handles::GetIndex(Window)] == Window)
+		if (!m_WindowPool.IsValid(Window))
 		{
-			i32 W, H;
-			SDL_GetWindowSizeInPixels(m_WindowData[Handles::GetIndex(Window)].NativeHandle, &W, &H);
-			Width = static_cast<u32>(W);
-			Height = static_cast<u32>(H);
+			LLOG(Display, Warning, "Attempted to get window size with an invalid handle!");
+			Width = 0;
+			Height = 0;
+			return;
 		}
+		
+		SDL_GetWindowSize(m_WindowPool.Get(Window).NativeHandle, (i32*)&Width, (i32*)&Height);
+	}
+	
+	void LSDLDisplayManager::GetVulkanInstanceExtensions(WindowHandle Window, TArray<const char*>& OutExtensions) const 
+	{
+		if (!m_WindowPool.IsValid(Window))
+		{
+			LLOG(Display, Warning, "Attempted to dereference an invalid handle!");
+			OutExtensions.Clear();
+			return;
+		}
+		
+		u32 RequiredExtensionCount;
+		SDL_Window* WindowHandle = m_WindowPool.Get(Window).NativeHandle;
+		SDL_Vulkan_GetInstanceExtensions(WindowHandle, &RequiredExtensionCount, NULL);
+		OutExtensions.Reserve(RequiredExtensionCount);
+		SDL_Vulkan_GetInstanceExtensions(WindowHandle, &RequiredExtensionCount, OutExtensions.Data());
+		OutExtensions.Push(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
 	}
 	
 	bool LSDLDisplayManager::CreateVulkanSurface(WindowHandle Window, VkInstance Instance, VkSurfaceKHR& OutSurface) const 
 	{
-		if (m_WindowHandles[Handles::GetIndex(Window)] == Window)
+		if (!m_WindowPool.IsValid(Window))
 		{
-			SDL_Vulkan_CreateSurface(m_WindowData[Handles::GetIndex(Window)].NativeHandle, Instance, &OutSurface);
+			LLOG(Display, Warning, "Attempted to dereference an invalid handle!");
+			return false;
 		}
+
+		SDL_Window* WindowHandle = m_WindowPool.Get(Window).NativeHandle;
+		return SDL_Vulkan_CreateSurface(WindowHandle, Instance, &OutSurface) == SDL_TRUE;
 	}
 	
 	void LSDLDisplayManager::PollEvents(bool& bShouldQuit)
@@ -109,13 +123,25 @@ namespace Locus
 			{
 				if (Event.window.event == SDL_WINDOWEVENT_CLOSE)
 				{
-					for (arch i = 0; i < WINDOW_COUNT_MAX; i++)
+					for (arch i = 0; i < m_WindowPool.Count(); i++)
 					{
-						if (SDL_GetWindowID(m_WindowData[i].NativeHandle) == Event.window.windowID)
+						if (m_WindowPool.IsValidAt(i))
 						{
-							DestroyWindow(m_WindowHandles[i]);
+							if (SDL_GetWindowID(m_WindowPool.GetValueAt(i).NativeHandle) == Event.window.windowID)
+							{
+								DestroyWindow(m_WindowPool.GetHandleAt(i));
+							}
 						}
 					}
+				}
+			}
+			
+			if (Event.type == SDL_KEYDOWN)
+			{
+				if (Event.key.keysym.sym == SDLK_SPACE)
+				{
+					// Create a window
+					CreateWindow("Test", 800, 600);
 				}
 			}
 		}

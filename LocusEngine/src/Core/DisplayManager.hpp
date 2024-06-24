@@ -17,6 +17,7 @@ namespace Locus
 		virtual void* GetNativeWindowHandle(WindowHandle Window) = 0;
 		virtual void GetWindowFramebufferSize(WindowHandle Window, u32& Width, u32& Height) = 0;
 		
+		virtual void GetVulkanInstanceExtensions(WindowHandle Window, TArray<const char*>& OutExtensions) const = 0;
 		virtual bool CreateVulkanSurface(WindowHandle Window, VkInstance Instance, VkSurfaceKHR& OutSurface) const = 0;
 		
 		virtual void PollEvents(bool& bShouldQuit) = 0;

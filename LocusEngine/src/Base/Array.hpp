@@ -3,6 +3,8 @@
 #include "Asserts.hpp"
 #include "Defines.hpp"
 
+#include <cstring>
+
 namespace Locus
 {
 	template <class T>

@@ -31,5 +31,7 @@ namespace Locus::LVK
 	VkPresentModeKHR ChooseSwapchainPresentMode(const TArray<VkPresentModeKHR>& AvailablePresentModes);
 	VkExtent2D ChooseSwapchainExtent(const WindowHandle Window, const VkSurfaceCapabilitiesKHR& Capabilities);
 	
+	VkShaderModule CreateShaderModule(VkDevice Device, const VkAllocationCallbacks* Allocator, const u8* Code, arch CodeSize);
+	
 	VkRenderingAttachmentInfo RenderingAttachmentInfo(VkImageView View, VkClearValue* Clear, VkImageLayout Layout);
 }
