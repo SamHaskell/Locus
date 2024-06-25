@@ -20,6 +20,24 @@ namespace Locus
 			
 			TArray() = default;
 			
+			TArray(const TArray& other) : m_Capacity(other.m_Capacity), m_Count(other.m_Count)
+			{
+				m_Data = (T*)(malloc(m_Capacity * sizeof(T)));
+				memcpy(m_Data, other.m_Data, m_Capacity * sizeof(T));
+			}
+			
+			TArray operator = (const TArray& other)
+			{
+				if (this != &other)
+				{
+					m_Capacity = other.m_Capacity;
+					m_Count = other.m_Count;
+					m_Data = (T*)(malloc(m_Capacity * sizeof(T)));
+					memcpy(m_Data, other.m_Data, m_Capacity * sizeof(T));
+				}
+				return *this;
+			}
+			
 			~TArray() 
 			{
 				free(m_Data);

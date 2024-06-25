@@ -2,6 +2,7 @@
 
 #include "Base/Asserts.hpp"
 #include "Base/Handles.hpp"
+#include "Graphics/GraphicsManager.hpp"
 #include "LVKHelpers.hpp"
 #include "LVKResources.hpp"
 
@@ -9,6 +10,7 @@
 #include "Platform/LVK/LVKCommon.hpp"
 #include "Platform/Platform.hpp"
 #include "imgui_internal.h"
+#include <vulkan/vulkan_core.h>
 
 #define VMA_IMPLEMENTATION
 #include "vma/vk_mem_alloc.h"
@@ -34,7 +36,7 @@ namespace Locus
 		Deletors.clear();
 	}
 	
-	LVKGraphicsManager::LVKGraphicsManager()
+	LVKGraphicsManager::LVKGraphicsManager() : m_RenderContextPool(WINDOW_COUNT_MAX)
 	{
 		LAssertMsg(DisplayManager::GetPtr() != nullptr, "DisplayManager must be initialized before GraphicsManager!");
 		
@@ -54,7 +56,7 @@ namespace Locus
 			10. Profit ???
 	 	*/
 			
-		WindowHandle DummyWindow = DisplayManager::Get().CreateWindow("Dummy", 0, 0);
+		WindowHandle DummyWindow = DisplayManager::Get().CreateWindow("Dummy", 0, 0, false);
 		DisplayManager::Get().GetVulkanInstanceExtensions(DummyWindow, m_GraphicsDevice.Config.RequiredExtensions);
 		
         m_GraphicsDevice.Config.ValidationLayers.Push("VK_LAYER_KHRONOS_validation");
@@ -101,8 +103,6 @@ namespace Locus
         };
         vmaCreateAllocator(&AllocatorInfo, &m_GraphicsDevice.Allocator);
         m_GraphicsDevice.GlobalDeletionQueue.Push([&]() { vmaDestroyAllocator(m_GraphicsDevice.Allocator); });
-        		
-		// ImGui
 		
 		VkDescriptorPoolSize PoolSizes[] = { { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
 			{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
@@ -127,31 +127,41 @@ namespace Locus
 		VK_CHECK_RESULT(vkCreateDescriptorPool(m_GraphicsDevice.Device, &PoolInfo, nullptr, &m_GraphicsDevice.ImGuiDescriptorPool));
 		
 		m_GraphicsDevice.GlobalDeletionQueue.Push([=](){
-			ImGui_ImplVulkan_Shutdown();
 			vkDestroyDescriptorPool(m_GraphicsDevice.Device, m_GraphicsDevice.ImGuiDescriptorPool, nullptr);
 		});
 	}
 	
 	LVKGraphicsManager::~LVKGraphicsManager()
 	{
+		vkDeviceWaitIdle(m_GraphicsDevice.Device);
 		
+		for (arch i = 0; i < m_RenderContextPool.Count(); i++)
+		{
+			if (m_RenderContextPool.IsValidAt(i))
+			{
+				RenderContextHandle Handle = m_RenderContextPool.GetHandleAt(i);
+				DestroyRenderContext(Handle);
+			}
+		}
 		
 		m_GraphicsDevice.GlobalDeletionQueue.Flush();
 	}
 	
 	RenderContextHandle LVKGraphicsManager::CreateRenderContext(const WindowHandle Window)
 	{
+		LVKRenderContext Ctx;
+		
 		VK_CHECK_HANDLE(m_GraphicsDevice.Instance);
 		
 		// Make the surface
-		LVK::CreateSurface(Window, m_GraphicsDevice.Instance, m_GraphicsContext.Surface);
+		LVK::CreateSurface(Window, m_GraphicsDevice.Instance, Ctx.Surface);
 		
 		m_GraphicsDevice.GlobalDeletionQueue.Push([&](){
-			LVK::DestroySurface(m_GraphicsDevice.Instance, m_GraphicsContext.Surface);
+			LVK::DestroySurface(m_GraphicsDevice.Instance, Ctx.Surface);
 		});
 		
 		// Query for swapchain details
-		LVKSwapchainSupportDetails SwapchainSupportDetails = LVK::QuerySwapchainSupport(m_GraphicsContext.Surface, m_GraphicsDevice.PhysicalDevice);
+		LVKSwapchainSupportDetails SwapchainSupportDetails = LVK::QuerySwapchainSupport(Ctx.Surface, m_GraphicsDevice.PhysicalDevice);
 		
 		VkSurfaceFormatKHR SurfaceFormat = LVK::ChooseSwapchainSurfaceFormat(SwapchainSupportDetails.Formats);
 		VkPresentModeKHR PresentMode = LVK::ChooseSwapchainPresentMode(SwapchainSupportDetails.PresentModes);
@@ -164,7 +174,7 @@ namespace Locus
 		
 		VkSwapchainCreateInfoKHR SwapchainCreateInfo = {
 			.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-			.surface = m_GraphicsContext.Surface,
+			.surface = Ctx.Surface,
 			.minImageCount = ImageCount,
 			.imageFormat = SurfaceFormat.format,
 			.imageColorSpace = SurfaceFormat.colorSpace,
@@ -181,7 +191,7 @@ namespace Locus
 			.oldSwapchain = VK_NULL_HANDLE
 		};
 		
-		LVKQueueFamilyIndices QueueFamilyIndices = LVK::FindPhysicalDeviceQueueFamilies(m_GraphicsDevice.PhysicalDevice, m_GraphicsContext.Surface);
+		LVKQueueFamilyIndices QueueFamilyIndices = LVK::FindPhysicalDeviceQueueFamilies(m_GraphicsDevice.PhysicalDevice, Ctx.Surface);
 		u32 Indices[] = {QueueFamilyIndices.GraphicsFamilyIndex, QueueFamilyIndices.PresentFamilyIndex};
 		if (Indices[0] != Indices[1])
 		{
@@ -190,28 +200,28 @@ namespace Locus
 			SwapchainCreateInfo.pQueueFamilyIndices = Indices;
 		}
 		
-		VK_CHECK_RESULT(vkCreateSwapchainKHR(m_GraphicsDevice.Device, &SwapchainCreateInfo, nullptr, &m_GraphicsContext.Swapchain.Swapchain));
+		VK_CHECK_RESULT(vkCreateSwapchainKHR(m_GraphicsDevice.Device, &SwapchainCreateInfo, nullptr, &Ctx.Swapchain.Swapchain));
 		
 		// Store the details and grab the images
 		
-		m_GraphicsContext.Swapchain.Details.Extent = Extent;
-		m_GraphicsContext.Swapchain.Details.ImageFormat = SurfaceFormat.format;
-		m_GraphicsContext.Swapchain.Details.ImageCount = ImageCount;
+		Ctx.Swapchain.Details.Extent = Extent;
+		Ctx.Swapchain.Details.ImageFormat = SurfaceFormat.format;
+		Ctx.Swapchain.Details.ImageCount = ImageCount;
 		
-		vkGetSwapchainImagesKHR(m_GraphicsDevice.Device, m_GraphicsContext.Swapchain.Swapchain, &m_GraphicsContext.Swapchain.Details.ImageCount, nullptr);
-		m_GraphicsContext.Swapchain.Images.Reserve(m_GraphicsContext.Swapchain.Details.ImageCount);
-		vkGetSwapchainImagesKHR(m_GraphicsDevice.Device, m_GraphicsContext.Swapchain.Swapchain, &m_GraphicsContext.Swapchain.Details.ImageCount, m_GraphicsContext.Swapchain.Images.Data());
+		vkGetSwapchainImagesKHR(m_GraphicsDevice.Device, Ctx.Swapchain.Swapchain, &Ctx.Swapchain.Details.ImageCount, nullptr);
+		Ctx.Swapchain.Images.Reserve(Ctx.Swapchain.Details.ImageCount);
+		vkGetSwapchainImagesKHR(m_GraphicsDevice.Device, Ctx.Swapchain.Swapchain, &Ctx.Swapchain.Details.ImageCount, Ctx.Swapchain.Images.Data());
 		
 		// Create the image views
 		
-		m_GraphicsContext.Swapchain.ImageViews.Reserve(m_GraphicsContext.Swapchain.Details.ImageCount);
-		for (arch i = 0; i < m_GraphicsContext.Swapchain.Images.Length(); i++)
+		Ctx.Swapchain.ImageViews.Reserve(Ctx.Swapchain.Details.ImageCount);
+		for (arch i = 0; i < Ctx.Swapchain.Images.Length(); i++)
 		{
 			VkImageViewCreateInfo ViewCreateInfo = {
 				.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-				.image = m_GraphicsContext.Swapchain.Images[i],
+				.image = Ctx.Swapchain.Images[i],
 				.viewType = VK_IMAGE_VIEW_TYPE_2D,
-				.format = m_GraphicsContext.Swapchain.Details.ImageFormat,
+				.format = Ctx.Swapchain.Details.ImageFormat,
 				.components = {
 					.r = VK_COMPONENT_SWIZZLE_IDENTITY,
 					.g = VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -227,22 +237,13 @@ namespace Locus
 				},
 			};
 		
-			VK_CHECK_RESULT(vkCreateImageView(m_GraphicsDevice.Device, &ViewCreateInfo, nullptr, &m_GraphicsContext.Swapchain.ImageViews[i]));
+			VK_CHECK_RESULT(vkCreateImageView(m_GraphicsDevice.Device, &ViewCreateInfo, nullptr, &Ctx.Swapchain.ImageViews[i]));
 		}
-		
-		m_GraphicsDevice.GlobalDeletionQueue.Push([&](){
-			vkDeviceWaitIdle(m_GraphicsDevice.Device);
-			vkDestroySwapchainKHR(m_GraphicsDevice.Device, m_GraphicsContext.Swapchain.Swapchain, nullptr);
-			for (arch i = 0; i < m_GraphicsContext.Swapchain.ImageViews.Length(); i++)
-			{
-				vkDestroyImageView(m_GraphicsDevice.Device, m_GraphicsContext.Swapchain.ImageViews[i], nullptr);
-			}
-		});
 		
 		// Renderpass
 			
 		VkAttachmentDescription ColorAttachment = {
-			.format = m_GraphicsContext.Swapchain.Details.ImageFormat,
+			.format = Ctx.Swapchain.Details.ImageFormat,
 			.samples = VK_SAMPLE_COUNT_1_BIT,
 			.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
 			.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -271,37 +272,26 @@ namespace Locus
 			.pSubpasses = &Subpass
 		};
 		
-		VK_CHECK_RESULT(vkCreateRenderPass(m_GraphicsDevice.Device, &RenderPassInfo, nullptr, &m_GraphicsContext.Swapchain.RenderPass));
-		
-		m_GraphicsDevice.GlobalDeletionQueue.Push([&](){
-			vkDestroyRenderPass(m_GraphicsDevice.Device, m_GraphicsContext.Swapchain.RenderPass, nullptr);
-		});
+		VK_CHECK_RESULT(vkCreateRenderPass(m_GraphicsDevice.Device, &RenderPassInfo, nullptr, &Ctx.Swapchain.RenderPass));
 		
 		// Create framebuffers
 		
-		m_GraphicsContext.Swapchain.Framebuffers.Reserve(m_GraphicsContext.Swapchain.Details.ImageCount);
-		for (arch i = 0; i < m_GraphicsContext.Swapchain.Framebuffers.Length(); i++)
+		Ctx.Swapchain.Framebuffers.Reserve(Ctx.Swapchain.Details.ImageCount);
+		for (arch i = 0; i < Ctx.Swapchain.Framebuffers.Length(); i++)
 		{
-			VkImageView Attachments[] = {m_GraphicsContext.Swapchain.ImageViews[i]};
+			VkImageView Attachments[] = {Ctx.Swapchain.ImageViews[i]};
 			VkFramebufferCreateInfo FramebufferInfo = {
 				.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-				.renderPass = m_GraphicsContext.Swapchain.RenderPass,
+				.renderPass = Ctx.Swapchain.RenderPass,
 				.attachmentCount = 1,
 				.pAttachments = Attachments,
-				.width = m_GraphicsContext.Swapchain.Details.Extent.width,
-				.height = m_GraphicsContext.Swapchain.Details.Extent.height,
+				.width = Ctx.Swapchain.Details.Extent.width,
+				.height = Ctx.Swapchain.Details.Extent.height,
 				.layers = 1
 			};
 			
-			VK_CHECK_RESULT(vkCreateFramebuffer(m_GraphicsDevice.Device, &FramebufferInfo, nullptr, &m_GraphicsContext.Swapchain.Framebuffers[i]));
+			VK_CHECK_RESULT(vkCreateFramebuffer(m_GraphicsDevice.Device, &FramebufferInfo, nullptr, &Ctx.Swapchain.Framebuffers[i]));
 		}
-		      
-		m_GraphicsDevice.GlobalDeletionQueue.Push([&](){
-			for (arch i = 0; i < m_GraphicsContext.Swapchain.Framebuffers.Length(); i++)
-			{
-				vkDestroyFramebuffer(m_GraphicsDevice.Device, m_GraphicsContext.Swapchain.Framebuffers[i], nullptr);
-			}
-		});
 		
 		// Frame resources
 		
@@ -314,17 +304,17 @@ namespace Locus
 		
 		for (i32 i = 0; i < FRAMES_IN_FLIGHT; i++)
 		{
-			VK_CHECK_RESULT(vkCreateCommandPool(m_GraphicsDevice.Device, &PoolCreateInfo, nullptr, &m_GraphicsContext.FrameResources[i].CommandPool));
+			VK_CHECK_RESULT(vkCreateCommandPool(m_GraphicsDevice.Device, &PoolCreateInfo, nullptr, &Ctx.FrameResources[i].CommandPool));
 			
 			VkCommandBufferAllocateInfo AllocInfo = {
 				.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
 				.pNext = nullptr,
-				.commandPool = m_GraphicsContext.FrameResources[i].CommandPool,
+				.commandPool = Ctx.FrameResources[i].CommandPool,
 				.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
 				.commandBufferCount = 1,
 			};
 			
-			VK_CHECK_RESULT(vkAllocateCommandBuffers(m_GraphicsDevice.Device, &AllocInfo, &m_GraphicsContext.FrameResources[i].CommandBuffer));
+			VK_CHECK_RESULT(vkAllocateCommandBuffers(m_GraphicsDevice.Device, &AllocInfo, &Ctx.FrameResources[i].CommandBuffer));
 		}
 		
 		VkFenceCreateInfo FenceCreateInfo = {
@@ -341,91 +331,19 @@ namespace Locus
 		
 		for (i32 i = 0; i < FRAMES_IN_FLIGHT; i++)
 		{
-			VK_CHECK_RESULT(vkCreateFence(m_GraphicsDevice.Device, &FenceCreateInfo, nullptr, &m_GraphicsContext.FrameResources[i].InFlightFence));
-			VK_CHECK_RESULT(vkCreateSemaphore(m_GraphicsDevice.Device, &SemaphoreCreateInfo, nullptr, &m_GraphicsContext.FrameResources[i].ImageAvailableSemaphore));
-			VK_CHECK_RESULT(vkCreateSemaphore(m_GraphicsDevice.Device, &SemaphoreCreateInfo, nullptr, &m_GraphicsContext.FrameResources[i].RenderFinishedSemaphore));
+			VK_CHECK_RESULT(vkCreateFence(m_GraphicsDevice.Device, &FenceCreateInfo, nullptr, &Ctx.FrameResources[i].InFlightFence));
+			VK_CHECK_RESULT(vkCreateSemaphore(m_GraphicsDevice.Device, &SemaphoreCreateInfo, nullptr, &Ctx.FrameResources[i].ImageAvailableSemaphore));
+			VK_CHECK_RESULT(vkCreateSemaphore(m_GraphicsDevice.Device, &SemaphoreCreateInfo, nullptr, &Ctx.FrameResources[i].RenderFinishedSemaphore));
 		}
 		
-		m_GraphicsDevice.GlobalDeletionQueue.Push([&](){
-			vkDeviceWaitIdle(m_GraphicsDevice.Device);
-			for (i32 i = 0; i < FRAMES_IN_FLIGHT; i++)
-			{
-				vkDestroyFence(m_GraphicsDevice.Device, m_GraphicsContext.FrameResources[i].InFlightFence, nullptr);
-				vkDestroySemaphore(m_GraphicsDevice.Device, m_GraphicsContext.FrameResources[i].ImageAvailableSemaphore, nullptr);
-				vkDestroySemaphore(m_GraphicsDevice.Device, m_GraphicsContext.FrameResources[i].RenderFinishedSemaphore, nullptr);
-				vkDestroyCommandPool(m_GraphicsDevice.Device, m_GraphicsContext.FrameResources[i].CommandPool, nullptr);
-				m_GraphicsContext.FrameResources[i].PerFrameDeletionQueue.Flush();
-			}
-		});
-		
-		VkPipelineLayoutCreateInfo TriangleLayout = {
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-			.pNext = nullptr,
-			.setLayoutCount = 0,
-			.pSetLayouts = nullptr
-		};
-		
-		VK_CHECK_RESULT(vkCreatePipelineLayout(m_GraphicsDevice.Device, &TriangleLayout, nullptr, &m_TrianglePipelineLayout));
-		
-		const char* VertShaderPath = "./build/LocusEngine/content/shaders/triangle.vert.spv";
-		
-		arch VertCodeSize;
-		LAssert(Platform::FileGetSize(VertShaderPath, VertCodeSize));
-		u8 VertShaderCode[VertCodeSize];
-		LAssert(Platform::FileReadBytes(VertShaderPath, VertShaderCode, VertCodeSize));
-		
-		VkShaderModule VertShader = LVK::CreateShaderModule(m_GraphicsDevice.Device, nullptr, VertShaderCode, VertCodeSize);
-		
-		const char* FragShaderPath = "./build/LocusEngine/content/shaders/triangle.frag.spv";
-		
-		arch FragCodeSize;
-		LAssert(Platform::FileGetSize(FragShaderPath, FragCodeSize));
-		u8 FragShaderCode[FragCodeSize];
-		LAssert(Platform::FileReadBytes(FragShaderPath, FragShaderCode, FragCodeSize));
-		
-		VkShaderModule FragShader = LVK::CreateShaderModule(m_GraphicsDevice.Device, nullptr, FragShaderCode, FragCodeSize);
-		
-		LVKPipelineFactory PipelineFactory;
-		PipelineFactory.Layout = m_TrianglePipelineLayout;
-		PipelineFactory.InputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-		PipelineFactory.Rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-		
-		PipelineFactory.ShaderStages.Push({
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-			.pNext = nullptr,
-			.flags = 0,
-			.stage = VK_SHADER_STAGE_VERTEX_BIT,
-			.module = VertShader,
-			.pName = "main",
-			.pSpecializationInfo = nullptr,
-		});
-		
-		PipelineFactory.ShaderStages.Push({
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-			.pNext = nullptr,
-			.flags = 0,
-			.stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-			.module = FragShader,
-			.pName = "main",
-			.pSpecializationInfo = nullptr,
-		});
-		
-		m_TrianglePipeline = PipelineFactory.Create(m_GraphicsDevice.Device, m_GraphicsContext.Swapchain.RenderPass);
-		
-		vkDestroyShaderModule(m_GraphicsDevice.Device, VertShader, nullptr);
-		vkDestroyShaderModule(m_GraphicsDevice.Device, FragShader, nullptr);
-		
-		m_GraphicsDevice.GlobalDeletionQueue.Push([&](){
-			vkDeviceWaitIdle(m_GraphicsDevice.Device);
-			vkDestroyPipelineLayout(m_GraphicsDevice.Device, m_TrianglePipelineLayout, nullptr);
-			vkDestroyPipeline(m_GraphicsDevice.Device, m_TrianglePipeline, nullptr);
-		});
-		
-		m_GraphicsContext.ImGuiContext = ImGui::CreateContext();
+		Ctx.ImGuiContext = ImGui::CreateContext();
+		ImGui::SetCurrentContext(Ctx.ImGuiContext);
 		
 		ImGuiIO& IO = ImGui::GetIO();
 		IO.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 		IO.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+		IO.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+		IO.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
 		
 		ImGui::StyleColorsDark();
 		
@@ -437,36 +355,77 @@ namespace Locus
 			.QueueFamily = m_GraphicsDevice.QueueFamilyIndices.GraphicsFamilyIndex,
 			.Queue = m_GraphicsDevice.GraphicsQueue,
 			.DescriptorPool = m_GraphicsDevice.ImGuiDescriptorPool,
-			.RenderPass = m_GraphicsContext.Swapchain.RenderPass,
-			.MinImageCount = m_GraphicsContext.Swapchain.Details.ImageCount,
-			.ImageCount = m_GraphicsContext.Swapchain.Details.ImageCount,
+			.RenderPass = Ctx.Swapchain.RenderPass,
+			.MinImageCount = Ctx.Swapchain.Details.ImageCount,
+			.ImageCount = Ctx.Swapchain.Details.ImageCount,
 			.MSAASamples = VK_SAMPLE_COUNT_1_BIT,
 			.Subpass = 0,
 			.UseDynamicRendering = false,
-			.PipelineRenderingCreateInfo = {
-				.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-				.colorAttachmentCount = 1,
-				.pColorAttachmentFormats = &m_GraphicsContext.Swapchain.Details.ImageFormat
-			},
 		};
 		ImGui_ImplVulkan_Init(&InitInfo);
-		
-		return HANDLE_INVALID;
+				
+		RenderContextHandle Handle = m_RenderContextPool.Create(Ctx);
+
+		// TEMP
+		MakePipelines(Handle);
+		// END TEMP
+
+		return Handle;
 	}
 	
-	void LVKGraphicsManager::TestDraw()
+	void LVKGraphicsManager::DestroyRenderContext(RenderContextHandle RenderContext)
 	{
-		LVKFrameResources& Frame = GetCurrentFrame();
+		LLOG(Vulkan, Info, "Destroying render context");
+		
+		LAssert(m_RenderContextPool.IsValid(RenderContext));
+		LVKRenderContext& Ctx = m_RenderContextPool.GetMut(RenderContext);
+		
+		vkDeviceWaitIdle(m_GraphicsDevice.Device);
+		
+		ImGui::SetCurrentContext(Ctx.ImGuiContext);
+		ImGui_ImplVulkan_Shutdown();
+		ImGui_ImplSDL2_Shutdown();
+		ImGui::DestroyContext(Ctx.ImGuiContext);
+		
+		for (i32 i = 0; i < FRAMES_IN_FLIGHT; i++)
+		{
+			vkDestroyFence(m_GraphicsDevice.Device, Ctx.FrameResources[i].InFlightFence, nullptr);
+			vkDestroySemaphore(m_GraphicsDevice.Device, Ctx.FrameResources[i].ImageAvailableSemaphore, nullptr);
+			vkDestroySemaphore(m_GraphicsDevice.Device, Ctx.FrameResources[i].RenderFinishedSemaphore, nullptr);
+			vkDestroyCommandPool(m_GraphicsDevice.Device, Ctx.FrameResources[i].CommandPool, nullptr);
+		}
+		
+		for (arch i = 0; i < Ctx.Swapchain.Framebuffers.Length(); i++)
+		{
+			vkDestroyFramebuffer(m_GraphicsDevice.Device, Ctx.Swapchain.Framebuffers[i], nullptr);
+		}
+		
+		vkDestroyRenderPass(m_GraphicsDevice.Device, Ctx.Swapchain.RenderPass, nullptr);
+
+		vkDestroySwapchainKHR(m_GraphicsDevice.Device, Ctx.Swapchain.Swapchain, nullptr);
+		for (arch i = 0; i < Ctx.Swapchain.ImageViews.Length(); i++)
+		{
+			vkDestroyImageView(m_GraphicsDevice.Device, Ctx.Swapchain.ImageViews[i], nullptr);
+		}
+		
+		vkDestroySurfaceKHR(m_GraphicsDevice.Instance, Ctx.Surface, nullptr);
+		
+		LLOG(Vulkan, Info, "Finished destroying render context.");
+	}
+	
+	void LVKGraphicsManager::BeginFrame(RenderContextHandle RenderContext)
+	{
+		LAssertMsg(m_ActiveRenderContext == HANDLE_INVALID, "There is already a frame in progress.");
+		LAssert(m_RenderContextPool.IsValid(RenderContext));
+		
+		LVKRenderContext& Ctx = m_RenderContextPool.GetMut(RenderContext);
+		LVKFrameResources& Frame = GetCurrentFrame(RenderContext);
+		VkCommandBuffer Cmd = Frame.CommandBuffer;
+		
 		VK_CHECK_RESULT(vkWaitForFences(m_GraphicsDevice.Device, 1, &Frame.InFlightFence, VK_TRUE, UINT64_MAX));
-		
-		Frame.PerFrameDeletionQueue.Flush();
-		
 		VK_CHECK_RESULT(vkResetFences(m_GraphicsDevice.Device, 1, &Frame.InFlightFence));
 		
-		u32 ImageIndex = 0;
-		VK_CHECK_RESULT(vkAcquireNextImageKHR(m_GraphicsDevice.Device, m_GraphicsContext.Swapchain.Swapchain, UINT64_MAX, Frame.ImageAvailableSemaphore, nullptr, &ImageIndex));
-		
-		VkCommandBuffer Cmd = Frame.CommandBuffer;
+		VK_CHECK_RESULT(vkAcquireNextImageKHR(m_GraphicsDevice.Device, Ctx.Swapchain.Swapchain, UINT64_MAX, Frame.ImageAvailableSemaphore, nullptr, &m_ActiveImageIndex));
 		
 		VK_CHECK_RESULT(vkResetCommandBuffer(Cmd, 0));
 		VkCommandBufferBeginInfo CommandBufferBeginInfo = {
@@ -477,54 +436,37 @@ namespace Locus
 		};
 		VK_CHECK_RESULT(vkBeginCommandBuffer(Cmd, &CommandBufferBeginInfo));
 		
-		LAssert(ImageIndex < m_GraphicsContext.Swapchain.Details.ImageCount);
+		LAssert(m_ActiveImageIndex < Ctx.Swapchain.Details.ImageCount);
 		
 		VkClearValue ClearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
 		
 		VkRenderPassBeginInfo RenderPassBeginInfo = {
 			.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-			.renderPass = m_GraphicsContext.Swapchain.RenderPass,
-			.framebuffer = m_GraphicsContext.Swapchain.Framebuffers[ImageIndex],
+			.renderPass = Ctx.Swapchain.RenderPass,
+			.framebuffer = Ctx.Swapchain.Framebuffers[m_ActiveImageIndex],
 			.renderArea = {
 				.offset = {0, 0},
-				.extent = m_GraphicsContext.Swapchain.Details.Extent,
+				.extent = Ctx.Swapchain.Details.Extent,
 			},
 			.clearValueCount = 1,
 			.pClearValues = &ClearColor
 		};
 		
-		vkCmdBeginRenderPass(Cmd, &RenderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE); 
+		vkCmdBeginRenderPass(Cmd, &RenderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 		
-		vkCmdBindPipeline(Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_TrianglePipeline);
+		m_ActiveRenderContext = RenderContext;
+	}
+	
+	void LVKGraphicsManager::EndFrame(RenderContextHandle RenderContext) 
+	{
+		LAssertMsg(m_ActiveRenderContext == RenderContext, "There is not currently a frame in progress for the given render context.");
 		
-		VkViewport Viewport = {
-			.x = 0.0f,
-			.y = 0.0f,
-			.width = static_cast<f32>(m_GraphicsContext.Swapchain.Details.Extent.width),
-			.height = static_cast<f32>(m_GraphicsContext.Swapchain.Details.Extent.height),
-			.minDepth = 0.0f,
-			.maxDepth = 1.0f
-		};
+		LAssert(m_RenderContextPool.IsValid(RenderContext));
+		LVKRenderContext& Ctx = m_RenderContextPool.GetMut(RenderContext);
+		LVKFrameResources& Frame = GetCurrentFrame(RenderContext);
+		VkCommandBuffer Cmd = Frame.CommandBuffer;
 		
-		vkCmdSetViewport(Cmd, 0, 1, &Viewport);
-		
-		VkRect2D Scissor = {
-			.offset = {0, 0},
-			.extent = m_GraphicsContext.Swapchain.Details.Extent
-		};
-		
-		vkCmdSetScissor(Cmd, 0, 1, &Scissor);
-		
-		vkCmdDraw(Cmd, 3, 1, 0, 0);
-		
-		// ImGUI
-		DrawImGui(m_GraphicsContext.ImGuiContext, Cmd, [](){
-			ImGui::ShowDemoWindow();
-		});
-
 		vkCmdEndRenderPass(Cmd);
-		
-		ImGui::UpdatePlatformWindows();
 					
 		VK_CHECK_RESULT(vkEndCommandBuffer(Cmd));
 		
@@ -575,25 +517,154 @@ namespace Locus
 			.waitSemaphoreCount = 1,
 			.pWaitSemaphores = &Frame.RenderFinishedSemaphore,
 			.swapchainCount = 1,
-			.pSwapchains = &m_GraphicsContext.Swapchain.Swapchain,
-			.pImageIndices = &ImageIndex,
+			.pSwapchains = &Ctx.Swapchain.Swapchain,
+			.pImageIndices = &m_ActiveImageIndex,
 		};
 		
 		VK_CHECK_RESULT(vkQueuePresentKHR(m_GraphicsDevice.PresentQueue, &PresentInfo));
-		m_GraphicsContext.FrameNumber ++;
+		Ctx.FrameNumber ++;
+		
+		m_ActiveRenderContext = HANDLE_INVALID;
+		
+		ImGui::SetCurrentContext(Ctx.ImGuiContext);
+		ImGui::UpdatePlatformWindows();
+		ImGui::RenderPlatformWindowsDefault();
 	}
 	
-	void LVKGraphicsManager::DrawImGui(ImGuiContext* Context, VkCommandBuffer Cmd, std::function<void()> DrawFunction)
+	void LVKGraphicsManager::BeginFrameImGui()
 	{
-		ImGui::SetCurrentContext(Context);
+		LAssert(m_ActiveRenderContext != HANDLE_INVALID);
+		LAssert(m_RenderContextPool.IsValid(m_ActiveRenderContext));
+		
+		LVKRenderContext& Ctx = m_RenderContextPool.GetMut(m_ActiveRenderContext);
+		
+		ImGui::SetCurrentContext(Ctx.ImGuiContext);
 		ImGui_ImplVulkan_NewFrame();
         ImGui_ImplSDL2_NewFrame();
         ImGui::NewFrame();
-        
-        DrawFunction();
-        
-        ImGui::Render();
+	}
+	
+	void LVKGraphicsManager::EndFrameImGui()
+	{
+		LAssert(m_ActiveRenderContext != HANDLE_INVALID);
+		LAssert(m_RenderContextPool.IsValid(m_ActiveRenderContext));
+		
+		LVKRenderContext& Ctx = m_RenderContextPool.GetMut(m_ActiveRenderContext);
+		LVKFrameResources& Frame = GetCurrentFrame(m_ActiveRenderContext);
+		VkCommandBuffer Cmd = Frame.CommandBuffer;
+
+		ImGui::Render();
         ImDrawData* DrawData = ImGui::GetDrawData();
         ImGui_ImplVulkan_RenderDrawData(DrawData, Cmd);
+	}
+	
+	ImGuiContext* LVKGraphicsManager::GetImGuiContext(RenderContextHandle RenderContext)
+	{
+		return m_RenderContextPool.Get(RenderContext).ImGuiContext;
+	}
+	
+	void LVKGraphicsManager::TestDraw(RenderContextHandle RenderContext)
+	{
+		LAssertMsg(m_ActiveRenderContext == RenderContext, "There is not currently a frame in progress for the given render context.");
+
+		LVKRenderContext& Ctx = m_RenderContextPool.GetMut(RenderContext);
+		LVKFrameResources& Frame = GetCurrentFrame(RenderContext);
+		VkCommandBuffer Cmd = Frame.CommandBuffer;
+		
+		vkCmdBindPipeline(Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_TrianglePipelines[RenderContext]);
+		
+		VkViewport Viewport = {
+			.x = 0.0f,
+			.y = 0.0f,
+			.width = static_cast<f32>(Ctx.Swapchain.Details.Extent.width),
+			.height = static_cast<f32>(Ctx.Swapchain.Details.Extent.height),
+			.minDepth = 0.0f,
+			.maxDepth = 1.0f
+		};
+		
+		vkCmdSetViewport(Cmd, 0, 1, &Viewport);
+		
+		VkRect2D Scissor = {
+			.offset = {0, 0},
+			.extent = Ctx.Swapchain.Details.Extent
+		};
+		
+		vkCmdSetScissor(Cmd, 0, 1, &Scissor);
+		
+		vkCmdDraw(Cmd, 3, 1, 0, 0);
+	}
+	
+	void LVKGraphicsManager::MakePipelines(RenderContextHandle RenderContext)
+	{
+		VkRenderPass RenderPass = m_RenderContextPool.Get(RenderContext).Swapchain.RenderPass;
+		
+		VkPipelineLayoutCreateInfo TriangleLayout = {
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+			.pNext = nullptr,
+			.setLayoutCount = 0,
+			.pSetLayouts = nullptr
+		};
+		
+		VK_CHECK_RESULT(vkCreatePipelineLayout(m_GraphicsDevice.Device, &TriangleLayout, nullptr, &m_TrianglePipelineLayouts[RenderContext]));
+		
+		const char* VertShaderPath = "./build/LocusEngine/content/shaders/triangle.vert.spv";
+		
+		arch VertCodeSize;
+		LAssert(Platform::FileGetSize(VertShaderPath, VertCodeSize));
+		u8 VertShaderCode[VertCodeSize];
+		LAssert(Platform::FileReadBytes(VertShaderPath, VertShaderCode, VertCodeSize));
+		
+		VkShaderModule VertShader = LVK::CreateShaderModule(m_GraphicsDevice.Device, nullptr, VertShaderCode, VertCodeSize);
+		
+		const char* FragShaderPath = "./build/LocusEngine/content/shaders/triangle.frag.spv";
+		
+		arch FragCodeSize;
+		LAssert(Platform::FileGetSize(FragShaderPath, FragCodeSize));
+		u8 FragShaderCode[FragCodeSize];
+		LAssert(Platform::FileReadBytes(FragShaderPath, FragShaderCode, FragCodeSize));
+		
+		VkShaderModule FragShader = LVK::CreateShaderModule(m_GraphicsDevice.Device, nullptr, FragShaderCode, FragCodeSize);
+		
+		LVKPipelineFactory PipelineFactory;
+		PipelineFactory.Layout = m_TrianglePipelineLayouts[RenderContext];
+		PipelineFactory.InputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+		PipelineFactory.Rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+		
+		PipelineFactory.ShaderStages.Push({
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+			.pNext = nullptr,
+			.flags = 0,
+			.stage = VK_SHADER_STAGE_VERTEX_BIT,
+			.module = VertShader,
+			.pName = "main",
+			.pSpecializationInfo = nullptr,
+		});
+		
+		PipelineFactory.ShaderStages.Push({
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+			.pNext = nullptr,
+			.flags = 0,
+			.stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+			.module = FragShader,
+			.pName = "main",
+			.pSpecializationInfo = nullptr,
+		});
+		
+		m_TrianglePipelines[RenderContext] = PipelineFactory.Create(m_GraphicsDevice.Device, RenderPass);
+		
+		vkDestroyShaderModule(m_GraphicsDevice.Device, VertShader, nullptr);
+		vkDestroyShaderModule(m_GraphicsDevice.Device, FragShader, nullptr);
+		
+		m_GraphicsDevice.GlobalDeletionQueue.Push([=](){
+			vkDestroyPipeline(m_GraphicsDevice.Device, m_TrianglePipelines[RenderContext], nullptr);
+			vkDestroyPipelineLayout(m_GraphicsDevice.Device, m_TrianglePipelineLayouts[RenderContext], nullptr);
+		});
+	}
+	
+	LVKFrameResources& LVKGraphicsManager::GetCurrentFrame(RenderContextHandle RenderContext)
+	{
+		LAssert(m_RenderContextPool.IsValid(RenderContext));
+		LVKRenderContext& Ctx = m_RenderContextPool.GetMut(RenderContext);
+		return Ctx.FrameResources[Ctx.FrameNumber % FRAMES_IN_FLIGHT];
 	}
 }

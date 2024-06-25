@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Core/DisplayManager.hpp"
 #include "Graphics/GraphicsManager.hpp"
 
 #include "LVKCommon.hpp"
@@ -8,14 +9,13 @@
 #include "imgui_internal.h"
 
 #include <deque>
+#include <map>
 #include <vma/vk_mem_alloc.h>
 #include <vulkan/vulkan_core.h>
 
 /*
 	TODO:
 	- Implement window resizing
-	- Implement actual multiple window support
-	- Cleanup, sort out the vulkan validation messages
 */
 
 namespace Locus
@@ -36,7 +36,6 @@ namespace Locus
 		VkFence InFlightFence;
 		VkCommandPool CommandPool;
 		VkCommandBuffer CommandBuffer;
-		LVKDeletionQueue PerFrameDeletionQueue;
 	};
 	
 	struct LVKGraphicsDevice
@@ -54,7 +53,7 @@ namespace Locus
 		LVKDeletionQueue GlobalDeletionQueue;
 	};
 	
-	struct LVKGraphicsContext
+	struct LVKRenderContext
 	{
 		VkSurfaceKHR Surface;
 		LVKSwapchain Swapchain;
@@ -70,19 +69,30 @@ namespace Locus
 		LVKGraphicsManager();
 		~LVKGraphicsManager();
 		
-		RenderContextHandle CreateRenderContext(const WindowHandle Window) override;
-
-		void TestDraw() override;		
+		virtual RenderContextHandle CreateRenderContext(const WindowHandle Window) override;
+		virtual void DestroyRenderContext(RenderContextHandle RenderContext) override;
+		
+		virtual void BeginFrame(RenderContextHandle RenderContext) override;
+		virtual void EndFrame(RenderContextHandle RenderContext) override;
+		
+		virtual void BeginFrameImGui() override;
+		virtual void EndFrameImGui() override;
+		
+		virtual ImGuiContext* GetImGuiContext(RenderContextHandle RenderContext) override;
+		
+		virtual void TestDraw(RenderContextHandle RenderContext) override;		
 		
 	protected:
-		void DrawImGui(ImGuiContext* Context, VkCommandBuffer Cmd, std::function<void()> DrawFunction);
-		
-		LVKFrameResources& GetCurrentFrame() { return m_GraphicsContext.FrameResources[m_GraphicsContext.FrameNumber % FRAMES_IN_FLIGHT]; }
-	
 		LVKGraphicsDevice m_GraphicsDevice;
-		LVKGraphicsContext m_GraphicsContext;
+		Pool<LVKRenderContext> m_RenderContextPool;
 		
-		VkPipelineLayout m_TrianglePipelineLayout;
-		VkPipeline m_TrianglePipeline;
+		u32 m_ActiveImageIndex = 0;
+		bool m_ImGuiInProgress = false;
+		
+		std::map<RenderContextHandle, VkPipelineLayout> m_TrianglePipelineLayouts;
+		std::map<RenderContextHandle, VkPipeline> m_TrianglePipelines;
+
+		void MakePipelines(RenderContextHandle RenderContext);
+		LVKFrameResources& GetCurrentFrame(RenderContextHandle RenderContext);
 	};
 }

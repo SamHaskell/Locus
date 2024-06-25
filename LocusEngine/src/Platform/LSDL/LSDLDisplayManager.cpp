@@ -5,10 +5,12 @@
 #include "Base/Logging.hpp"
 
 #include "Core/DisplayManager.hpp"
+#include "Graphics/GraphicsManager.hpp"
 
 #include "SDL.h"
 #include "SDL_video.h"
 #include "SDL_vulkan.h"
+#include "imgui.h"
 #include "imgui_impl_sdl2.h"
 
 namespace Locus
@@ -23,10 +25,10 @@ namespace Locus
 		SDL_QuitSubSystem(SDL_INIT_VIDEO);
 	}
 	
-	WindowHandle LSDLDisplayManager::CreateWindow(const char* Title, u32 Width, u32 Height)
+	WindowHandle LSDLDisplayManager::CreateWindow(const char* Title, u32 Width, u32 Height, bool bMakeRenderContext)
 	{
 		LSDLWindow Window = {
-			.Flags = SDL_WINDOW_SHOWN | SDL_WINDOW_VULKAN,
+			.Flags = SDL_WINDOW_SHOWN | SDL_WINDOW_VULKAN | SDL_WINDOW_BORDERLESS,
 			.Title = Title
 		};
 				
@@ -42,6 +44,12 @@ namespace Locus
 		LAssert(Window.NativeHandle != NULL);
 		
 		WindowHandle WindowHandle = m_WindowPool.Create(Window);
+		
+		if (bMakeRenderContext)
+		{
+			m_WindowPool.GetMut(WindowHandle).RenderContext = GraphicsManager::Get().CreateRenderContext(WindowHandle);
+		}
+		
 		return WindowHandle;
 	}
 	
@@ -81,6 +89,17 @@ namespace Locus
 		SDL_GetWindowSize(m_WindowPool.Get(Window).NativeHandle, (i32*)&Width, (i32*)&Height);
 	}
 	
+	RenderContextHandle LSDLDisplayManager::GetWindowRenderContext(WindowHandle Window)
+	{
+		if (!m_WindowPool.IsValid(Window))
+		{
+			LLOG(Display, Warning, "Attempted to retrieve render context for a window with an invalid handle!");
+			return HANDLE_INVALID;
+		}
+		
+		return m_WindowPool.Get(Window).RenderContext;
+	}
+	
 	void LSDLDisplayManager::GetVulkanInstanceExtensions(WindowHandle Window, TArray<const char*>& OutExtensions) const 
 	{
 		if (!m_WindowPool.IsValid(Window))
@@ -115,8 +134,6 @@ namespace Locus
 		SDL_Event Event;
 		while (SDL_PollEvent(&Event))
 		{
-			ImGui_ImplSDL2_ProcessEvent(&Event);
-			
 			if (Event.type == SDL_QUIT)
 			{
 				bShouldQuit = true;
@@ -137,6 +154,20 @@ namespace Locus
 						}
 					}
 				}
+			}
+			
+			for (arch i = 0; i < m_WindowPool.Count(); i++)
+			{
+				if (m_WindowPool.IsValidAt(i))
+				{
+					if (SDL_GetWindowID(m_WindowPool.GetValueAt(i).NativeHandle) == Event.window.windowID)
+					{
+						RenderContextHandle RenderContext = m_WindowPool.GetValueAt(i).RenderContext;
+						auto* Ctx = GraphicsManager::Get().GetImGuiContext(RenderContext);
+						ImGui::SetCurrentContext(Ctx);
+						ImGui_ImplSDL2_ProcessEvent(&Event);
+					}
+				}				
 			}
 			
 			if (Event.type == SDL_KEYDOWN)

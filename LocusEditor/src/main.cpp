@@ -1,35 +1,73 @@
+#include "Core/DisplayManager.hpp"
 #include "Graphics/GraphicsManager.hpp"
 #include "Locus.hpp"
 #include "Platform/Platform.hpp"
+#include "imgui.h"
 
 using namespace Locus;
 
-static void TestRun()
+f64 s_DeltaTime = 0.0;
+
+static void Draw(RenderContextHandle RenderContext)
 {
-	WindowHandle Window = DisplayManager::Get().CreateWindow("Window", 1280, 720);
-	
-	// Note the handle is invalid right now, we need to properly implement contexts.
-	// This is just to demonstrate the API we want to expose.
-	RenderContextHandle RenderContext = GraphicsManager::Get().CreateRenderContext(Window);
-	
-	Clock Clock;
-	Clock.Start();
-	
-	bool bShouldQuit = false;
-	while (!bShouldQuit)
+	GraphicsManager::Get().TestDraw(RenderContext);
+}
+
+static void DrawGUI()
+{
+	if(ImGui::Begin("Debug"))
 	{
-		DisplayManager::Get().PollEvents(bShouldQuit);
-		GraphicsManager::Get().TestDraw();		
-		
-		f64 DeltaTime = Clock.GetElapsedSeconds();
-		Clock.Reset(true);
+		ImGui::Text("Frame Time: %.2lfms", s_DeltaTime * 1000.0);
 	}
+	ImGui::End();
 }
 
 i32 main(i32 argc, char* argv[])
 {	
 	Engine::Get().Init();
-	TestRun();
+
+	WindowHandle Window = DisplayManager::Get().CreateWindow("Window", 1280, 720);
+	RenderContextHandle RenderContext = DisplayManager::Get().GetWindowRenderContext(Window);
+	
+	WindowHandle Window2 = DisplayManager::Get().CreateWindow("Window", 1280, 720);
+	RenderContextHandle RenderContext2 = DisplayManager::Get().GetWindowRenderContext(Window2);
+	
+	Clock Clock;
+	Clock.Start();
+	
+	GraphicsManager& GraphicsManager = GraphicsManager::Get();
+	
+	bool bShouldQuit = false;
+	while (!bShouldQuit)
+	{
+		s_DeltaTime = Clock.GetElapsedSeconds();
+		Clock.Reset(true);
+		
+		DisplayManager::Get().PollEvents(bShouldQuit);
+		
+		GraphicsManager.BeginFrame(RenderContext);
+		{
+			Draw(RenderContext);
+			{
+				GraphicsManager.BeginFrameImGui();
+				DrawGUI();
+				GraphicsManager.EndFrameImGui();			
+			}
+		}	
+		GraphicsManager.EndFrame(RenderContext);
+
+		GraphicsManager.BeginFrame(RenderContext2);
+		{
+			Draw(RenderContext2);
+			{
+				GraphicsManager.BeginFrameImGui();
+				DrawGUI();
+				GraphicsManager.EndFrameImGui();			
+			}
+		}	
+		GraphicsManager.EndFrame(RenderContext2);
+	}
+	
 	Engine::Get().Shutdown();
 	return 0;
 }
