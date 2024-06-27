@@ -1,8 +1,6 @@
-#include "Core/DisplayManager.hpp"
-#include "Graphics/GraphicsManager.hpp"
 #include "Locus.hpp"
 #include "Platform/Platform.hpp"
-#include "imgui.h"
+
 
 using namespace Locus;
 
@@ -18,6 +16,10 @@ static void DrawGUI()
 	if(ImGui::Begin("Debug"))
 	{
 		ImGui::Text("Frame Time: %.2lfms", s_DeltaTime * 1000.0);
+		if (ImGui::Button("Make Window!"))
+		{
+			WindowHandle Handle = DisplayManager::Get().CreateWindow("Aghh", 800, 600);
+		}
 	}
 	ImGui::End();
 }
@@ -28,9 +30,6 @@ i32 main(i32 argc, char* argv[])
 
 	WindowHandle Window = DisplayManager::Get().CreateWindow("Window", 1280, 720);
 	RenderContextHandle RenderContext = DisplayManager::Get().GetWindowRenderContext(Window);
-	
-	WindowHandle Window2 = DisplayManager::Get().CreateWindow("Window", 1280, 720);
-	RenderContextHandle RenderContext2 = DisplayManager::Get().GetWindowRenderContext(Window2);
 	
 	Clock Clock;
 	Clock.Start();
@@ -55,17 +54,6 @@ i32 main(i32 argc, char* argv[])
 			}
 		}	
 		GraphicsManager.EndFrame(RenderContext);
-
-		GraphicsManager.BeginFrame(RenderContext2);
-		{
-			Draw(RenderContext2);
-			{
-				GraphicsManager.BeginFrameImGui();
-				DrawGUI();
-				GraphicsManager.EndFrameImGui();			
-			}
-		}	
-		GraphicsManager.EndFrame(RenderContext2);
 	}
 	
 	Engine::Get().Shutdown();

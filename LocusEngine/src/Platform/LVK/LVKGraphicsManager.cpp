@@ -2,15 +2,12 @@
 
 #include "Base/Asserts.hpp"
 #include "Base/Handles.hpp"
-#include "Graphics/GraphicsManager.hpp"
+
 #include "LVKHelpers.hpp"
 #include "LVKResources.hpp"
 
 #include "Core/DisplayManager.hpp"
-#include "Platform/LVK/LVKCommon.hpp"
 #include "Platform/Platform.hpp"
-#include "imgui_internal.h"
-#include <vulkan/vulkan_core.h>
 
 #define VMA_IMPLEMENTATION
 #include "vma/vk_mem_alloc.h"
@@ -336,6 +333,8 @@ namespace Locus
 			VK_CHECK_RESULT(vkCreateSemaphore(m_GraphicsDevice.Device, &SemaphoreCreateInfo, nullptr, &Ctx.FrameResources[i].RenderFinishedSemaphore));
 		}
 		
+		ImGuiContext* CachedContext = ImGui::GetCurrentContext();
+		
 		Ctx.ImGuiContext = ImGui::CreateContext();
 		ImGui::SetCurrentContext(Ctx.ImGuiContext);
 		
@@ -363,20 +362,20 @@ namespace Locus
 			.UseDynamicRendering = false,
 		};
 		ImGui_ImplVulkan_Init(&InitInfo);
-				
+		
 		RenderContextHandle Handle = m_RenderContextPool.Create(Ctx);
 
 		// TEMP
 		MakePipelines(Handle);
 		// END TEMP
+		
+		ImGui::SetCurrentContext(CachedContext);
 
 		return Handle;
 	}
 	
 	void LVKGraphicsManager::DestroyRenderContext(RenderContextHandle RenderContext)
 	{
-		LLOG(Vulkan, Info, "Destroying render context");
-		
 		LAssert(m_RenderContextPool.IsValid(RenderContext));
 		LVKRenderContext& Ctx = m_RenderContextPool.GetMut(RenderContext);
 		
@@ -409,8 +408,6 @@ namespace Locus
 		}
 		
 		vkDestroySurfaceKHR(m_GraphicsDevice.Instance, Ctx.Surface, nullptr);
-		
-		LLOG(Vulkan, Info, "Finished destroying render context.");
 	}
 	
 	void LVKGraphicsManager::BeginFrame(RenderContextHandle RenderContext)

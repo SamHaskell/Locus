@@ -28,7 +28,7 @@ namespace Locus
 	WindowHandle LSDLDisplayManager::CreateWindow(const char* Title, u32 Width, u32 Height, bool bMakeRenderContext)
 	{
 		LSDLWindow Window = {
-			.Flags = SDL_WINDOW_SHOWN | SDL_WINDOW_VULKAN | SDL_WINDOW_BORDERLESS,
+			.Flags = SDL_WINDOW_SHOWN | SDL_WINDOW_VULKAN,
 			.Title = Title
 		};
 				
@@ -168,15 +168,6 @@ namespace Locus
 						ImGui_ImplSDL2_ProcessEvent(&Event);
 					}
 				}				
-			}
-			
-			if (Event.type == SDL_KEYDOWN)
-			{
-				if (Event.key.keysym.sym == SDLK_SPACE)
-				{
-					// Create a window
-					CreateWindow("Test", 800, 600);
-				}
 			}
 		}
 	}
